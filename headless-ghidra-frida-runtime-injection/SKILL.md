@@ -37,8 +37,12 @@ evidence scenarios:
 
 - CLI/headless only. GUI-driven capture is out of scope.
 - Open-ended interactive exploration is out of scope.
+- Reusable scripts operate only on the configured targets for the approved
+  runtime scenario.
 - Runtime artifacts stay under `.work/ghidra-artifacts/` and are referenced
   explicitly rather than copied into tracked skill directories.
+- Raw runtime values may remain only in those local `.work` artifacts; tracked
+  docs and manifests must redact or generalize them.
 - Generated planning artifacts must keep selected scripts, capture commands,
   produced artifacts, and audit gates visible in Markdown.
 - Reusable script-library coverage gaps, behavior changes, or helper changes
@@ -81,8 +85,9 @@ scenarios, reusable scripts, coverage-gap routes, or other discrete options:
    candidate script in [`./frida-scripts/README.md`](./frida-scripts/README.md).
 3. Record the selected script identifier or identifiers in the capture
    manifest.
-4. If no script covers the request, or if behavior/output expectations change,
-   stop and route the change through script review.
+4. If no script covers the request, if capture scope expands beyond configured
+   targets, or if behavior/output expectations change, stop and route the
+   change through script review.
 
 ## Required Outputs
 
@@ -90,6 +95,7 @@ scenarios, reusable scripts, coverage-gap routes, or other discrete options:
 - a runtime capture manifest using
   [`./templates/frida-capture-manifest.md`](./templates/frida-capture-manifest.md)
 - explicit artifact references under `.work/ghidra-artifacts/`
+- tracked Markdown summaries that redact or generalize raw runtime values
 - a handoff to the Frida evidence-import phase with audit-gate results visible
 
 ## How To Use This Skill
@@ -100,8 +106,9 @@ scenarios, reusable scripts, coverage-gap routes, or other discrete options:
    [`./frida-scripts/manifest.md`](./frida-scripts/manifest.md).
 3. Use the same brief to audit generated `spec.md`, `plan.md`, and `tasks.md`.
 4. If the generated artifacts weaken CLI/headless capture, hide runtime
-   outputs, or skip the evidence-import handoff, refine or regenerate the
-   planning artifacts instead of weakening this contract.
+   outputs, copy raw runtime values into tracked docs, or skip the
+   evidence-import handoff, refine or regenerate the planning artifacts
+   instead of weakening this contract.
 
 ## Examples
 

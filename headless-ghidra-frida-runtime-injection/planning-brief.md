@@ -24,7 +24,11 @@ handoff into the Frida evidence-import phase.
 - Capture remains reproducible through CLI/headless invocation.
 - GUI-driven capture is out of scope.
 - Open-ended interactive exploration is out of scope.
+- Reusable scripts operate only on configured targets in the approved
+  scenario.
 - Runtime artifacts stay under `.work/ghidra-artifacts/`.
+- Raw runtime values may remain only in those local `.work` artifacts.
+- Tracked docs and manifests must redact or generalize raw runtime values.
 - Runtime outputs remain reviewable in Markdown through explicit manifests.
 - Reusable library changes route to
   [`../headless-ghidra-script-review/SKILL.md`](../headless-ghidra-script-review/SKILL.md).
@@ -39,6 +43,8 @@ handoff into the Frida evidence-import phase.
 - `selected_script_ids`: reusable common Frida scripts chosen for capture
 - `capture_commands`: reproducible CLI/headless command forms
 - `artifact_root`: runtime artifact root under `.work/ghidra-artifacts/`
+- `tracked_summary_rule`: how raw runtime values stay local while tracked docs
+  use redacted or generalized summaries
 - `audit_gates`: checks that must pass before evidence import can begin
 - `local_rule_overlay`: optional stricter local rules
 
@@ -49,8 +55,9 @@ handoff into the Frida evidence-import phase.
 - Confirm invocation shape, expected outputs, and coverage notes in
   [`./frida-scripts/README.md`](./frida-scripts/README.md).
 - Reuse the tracked library before proposing any new helper.
-- If no reusable script covers the request, or if a script's behavior or
-  outputs need to change, stop and escalate to script review.
+- If no reusable script covers the request, if capture scope expands beyond
+  configured targets, or if a script's behavior or outputs need to change,
+  stop and escalate to script review.
 
 # Planning Brief Body
 
@@ -84,6 +91,11 @@ Artifact root:
 
 - `.work/ghidra-artifacts/<target-id>/`
 
+Tracked summary rule:
+
+- keep raw runtime values in local artifacts and use redacted or generalized
+  summaries in tracked docs
+
 Produced artifacts:
 
 - [fill in logs, traces, summaries, or manifest-linked outputs]
@@ -96,7 +108,11 @@ Non-negotiable constraints:
 
 - CLI/headless capture only.
 - No GUI-driven capture or open-ended interactive exploration.
+- Reusable scripts operate only on configured targets in the approved
+  scenario.
 - Runtime artifacts stay under `.work/ghidra-artifacts/`.
+- Raw runtime values stay in local `.work` artifacts; tracked docs and
+  manifests redact or generalize them.
 - Reviewable Markdown outputs for `spec.md`, `plan.md`, and `tasks.md`.
 - Reusable script-library changes route to script review.
 - No downstream speckit extension or constitution change required.
@@ -119,6 +135,8 @@ Non-negotiable constraints:
   blocking-path work.
 - Runtime artifacts and capture manifests remain explicit and replayable in the
   generated workflow.
+- Tracked summaries keep raw runtime values out of versioned review surfaces
+  unless those values have been redacted or generalized.
 - Generated artifacts preserve the route to evidence import rather than
   implying runtime capture is the last supported phase.
 - Any coverage gap or behavior change is routed to script review.

@@ -45,8 +45,14 @@ Every skill in this family keeps the same baseline:
   downstream `speckit` extensions or custom constitution edits.
 
 Runtime artifacts remain outside the tracked skill package. When Frida runtime
-capture is in scope, produced outputs stay under `.work/ghidra-artifacts/` and
-are referenced from manifests rather than copied into skill directories.
+capture is in scope, reusable scripts operate only on the configured targets
+for the approved scenario, produced outputs stay under
+`.work/ghidra-artifacts/`, and manifests reference those local artifacts rather
+than copying raw runtime output into tracked skill directories. Tracked
+documentation must redact or generalize raw runtime values. Requests for
+broader capture scope, new helper logic, or new output fields route to
+[`headless-ghidra-script-review`](./headless-ghidra-script-review/SKILL.md)
+instead of expanding the runtime flow ad hoc.
 
 ## Skill Map
 

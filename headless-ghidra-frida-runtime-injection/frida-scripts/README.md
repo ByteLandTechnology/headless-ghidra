@@ -30,8 +30,11 @@ manifest:
 - scenario-specific observation summaries
 - coverage notes and unresolved gaps
 
-Runtime artifacts stay under `.work/ghidra-artifacts/<target-id>/`. Do not copy
-raw runtime output into tracked skill files.
+Runtime artifacts stay under `.work/ghidra-artifacts/<target-id>/`. Reusable
+scripts operate only on the configured targets for the approved scenario. Raw
+runtime output may remain in those local artifacts, but tracked skill files and
+manifests must redact or generalize raw values instead of copying them
+verbatim.
 
 ## Reuse-First Rule
 
@@ -51,5 +54,7 @@ when:
 
 - no script covers the requested supported scenario
 - a script's behavior or expected outputs need to change
+- capture scope expands beyond configured targets
+- tracked docs would need disclosure of raw runtime values
 - a reusable capture helper is needed
 - a script must generate or normalize new manifest fields

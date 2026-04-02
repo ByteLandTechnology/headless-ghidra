@@ -26,6 +26,15 @@ shipped library or must escalate to script review.
 - If no inventory row matches, or if the coverage notes do not support the
   requested behavior, stop and escalate.
 
+## Boundary Rules
+
+- Inventory rows apply only to the configured targets for the approved runtime
+  scenario.
+- Raw runtime values may remain only in local
+  `.work/ghidra-artifacts/<target-id>/` artifacts.
+- Tracked manifests and skill docs must redact or generalize raw runtime
+  values instead of copying them verbatim.
+
 ## Escalation Rules
 
 Escalate to
@@ -34,6 +43,8 @@ when:
 
 - a supported scenario has no matching inventory row
 - a matching row exists but the coverage notes exclude the requested behavior
+- capture scope expands beyond configured targets
+- tracked documentation would need disclosure of raw runtime values
 - the request changes output shape, manifest fields, or helper logic
 - runtime and evidence phases disagree about how a reusable helper should be
   recorded
