@@ -1,0 +1,4 @@
+interface:
+  display_name: "Headless Ghidra Frida Evidence"
+  short_description: "Import Frida evidence for review"
+  default_prompt: "Use $headless-ghidra-frida-evidence to normalize imported Frida evidence and audit the planning artifacts."

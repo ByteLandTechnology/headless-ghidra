@@ -1,0 +1,4 @@
+interface:
+  display_name: "Headless Ghidra Frida Runtime Capture"
+  short_description: "Plan reproducible Frida runtime capture"
+  default_prompt: "Use $headless-ghidra-frida-runtime-injection to plan bounded Frida runtime capture and manifest handoff for this task."

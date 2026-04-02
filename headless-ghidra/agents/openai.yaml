@@ -1,0 +1,4 @@
+interface:
+  display_name: "Headless Ghidra"
+  short_description: "Route headless Ghidra workflow planning"
+  default_prompt: "Use $headless-ghidra to choose the right headless Ghidra phase skill for this task."

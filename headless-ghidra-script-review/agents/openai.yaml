@@ -1,0 +1,4 @@
+interface:
+  display_name: "Headless Ghidra Script Review"
+  short_description: "Author and audit reusable scripts"
+  default_prompt: "Use $headless-ghidra-script-review to review or plan reusable headless Ghidra script changes for this task."
