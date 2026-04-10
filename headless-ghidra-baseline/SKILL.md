@@ -53,6 +53,7 @@ performing semantic renames, or restoring prototypes.
 - ⛔ Must not modify function names, types, or prototypes
 - ⛔ Must not execute Apply Renames/Signatures
 - ⛔ Must not modify any files under `intake/`
+- ⛔ **Python / Jython scripts are strictly forbidden**. If you need custom Ghidra scripts, write them in Java. The file name MUST strictly match the public class name (e.g. `CustomAnalysis.java` -> `public class CustomAnalysis extends GhidraScript`).
 
 **Termination conditions**:
 - All 6 YAML files under `baseline/` generated
@@ -71,6 +72,12 @@ You are the P1 baseline export agent. Your responsibilities:
 You are strictly forbidden from decompiling function bodies, renaming, or
 modifying any metadata at this stage. Those operations belong to later phases.
 Violating this constraint is a blocking error.
+
+CRITICAL INSTRUCTION FOR SCRIPT AUTHORING:
+If you need to write a custom Ghidra script:
+1. DO NOT write Python/Jython (`.py`). The extension is missing and it will crash.
+2. DO write Java (`.java`) extending `ghidra.app.script.GhidraScript`.
+3. The file name and public class name MUST perfectly match to prevent `ClassNotFoundException`.
 ```
 
 ## Baseline Artifact Formats

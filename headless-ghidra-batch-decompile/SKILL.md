@@ -104,6 +104,7 @@ Phase C — Post-processing (no lock needed)
 - ⛔ Must not modify `baseline/` or `evidence/` files
 - ⛔ Must not force changes when role/name/prototype evidence is all weak
 - ⛔ Must not execute Frida (verification is P6's responsibility)
+- ⛔ **Python / Jython scripts are strictly forbidden**. If you need custom Ghidra scripts, write them in Java. The file name MUST strictly match the public class name (e.g. `CustomAnalysis.java` -> `public class CustomAnalysis extends GhidraScript`).
 
 **Termination conditions**:
 - All Phase A-C output files generated
@@ -131,6 +132,7 @@ Key constraints:
 - Role/name/prototype evidence must have at least 2 items available before
   allowing changes
 - You do not perform Frida verification (that is P6's responsibility)
+- CRITICAL SCRIPTING RULE: If you must write a new script, DO NOT write Python (`.py`). You MUST write Java (`.java`) and ensure the file name matches the public class name to avoid `ClassNotFoundException`.
 ```
 
 ## Gate Check Matrix (P5, per function)

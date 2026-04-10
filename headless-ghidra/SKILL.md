@@ -125,13 +125,17 @@ The orchestrator uses dialogs for user interaction in these scenarios:
 - Sub-agent dispatch capability
 - User dialog capability
 
+## Scripting Guidelines (If custom analysis is needed)
+
+- ⛔ **Python / Jython scripts are strictly forbidden**. Ghidra Headless is not configured with the Jython extension, so `.py` scripts will always crash with `GhidraScriptLoadException`.
+- ✅ **Write custom Java scripts**. If you need to write a custom Ghidra script to accomplish a task, write it in Java extending `GhidraScript`.
+- ⚠️ **Compilation Rule**: The file name MUST exactly match the public class name (e.g., `YourScript.java` MUST contain `public class YourScript extends GhidraScript`). Failure to do so causes `ClassNotFoundException`.
+
 ## Strict Prohibitions
 
-- ⛔ **Must not execute any Ghidra commands**
 - ⛔ **Must not execute any Frida commands**
-- ⛔ **Must not analyze binary content**
 - ⛔ **Must not write reconstruction code**
-- ⛔ **Must not modify any artifacts under `baseline/`, `evidence/`, `iterations/`** (read-only + state file writes only)
+- ⛔ **Must not modify any artifacts under `baseline/`, `evidence/`, `iterations/` directly via shell (use YAML tools or state updates)**
 
 ## Orchestration Pseudocode
 
