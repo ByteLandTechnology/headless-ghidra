@@ -1,4 +1,0 @@
-interface:
-  display_name: "Headless Ghidra Progressive Decompilation"
-  short_description: "Plan selected decompilation and compare"
-  default_prompt: "Use $headless-ghidra-progressive-decompilation to plan the next selected decompilation and incremental compare step."

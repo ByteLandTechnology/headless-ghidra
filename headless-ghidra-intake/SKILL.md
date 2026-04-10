@@ -1,91 +1,149 @@
 ---
 name: "headless-ghidra-intake"
-description: "Phase skill for target intake and project initialization before speckit planning or audit."
-phase: "intake_init"
+description: "P0 sub-skill: target identity confirmation, workspace creation, Ghidra discovery, and archive normalization. Dispatches two parallel agents: intake-workspace and intake-ghidra."
+phase: "P0"
 ---
 
-# Headless Ghidra Intake
+# Headless Ghidra Intake — P0 Target Intake
 
-Use this phase skill when the work is still defining the target, project
-layout, analyst intent, and the minimum planning inputs that must survive a
-`speckit` handoff.
+This skill handles the first phase of the pipeline: confirming target identity,
+creating the workspace, and discovering the Ghidra installation. The orchestrator
+dispatches two parallel agents to execute this phase.
 
-This skill is the contract surface for intake and initialization. The canonical
-artifact is [`./planning-brief.md`](./planning-brief.md). Use that file to
-carry constraints into `speckit`, then use the same file to review generated
-planning artifacts.
+## Entry / Exit Gates
 
-## Phase Focus
+| Property | Value |
+|---|---|
+| **Entry gate** | A clearly specified binary file or archive path |
+| **Exit gate** | `gate-check.sh --gate P0` passes |
 
-This phase covers:
+## Agent Role Definitions
 
-- target identity and source description
-- project/workspace initialization assumptions
-- analysis scope boundaries
-- initial analyst questions and deliverable types
-- prerequisites needed before evidence extraction or script work
+### Agent: `intake-workspace`
 
-This phase does not replace later evidence or script-review guidance. It
-prepares the baseline that those later phases build on.
+| Property | Value |
+|---|---|
+| **Agent ID** | `intake-workspace` |
+| **Instances** | 1 |
+| **Lifecycle** | Short-lived — terminates when P0 completes |
+| **Role** | Create workspace, record target identity, initialize reconstruction project |
+| **Parallelism** | ✅ Runs in parallel with `intake-ghidra` |
 
-## Non-Negotiable Constraints
+**Inputs**:
+- User-provided target binary/archive path
+- Workspace root path convention (`.work/`)
 
-- Keep the workflow headless-only. GUI-only steps are out of scope.
-- Keep claims evidence-backed. Intake facts should cite observed inputs,
-  provided binaries, manifests, or already-recorded repository evidence.
-- Keep the workflow reproducible. The plan must preserve project naming,
-  workspace assumptions, and replayable setup expectations.
-- Keep outputs reviewable in Markdown. `spec.md`, `plan.md`, and `tasks.md`
-  should remain inspectable without hidden tools or downstream hooks.
-- Do not require downstream `speckit` extensions or constitution edits to use
-  this phase contract.
+**Outputs**:
+- `.work/ghidra-artifacts/<target-id>/intake/target-identity.yaml`
+- `.work/ghidra-artifacts/<target-id>/intake/workspace-manifest.yaml`
+- `.work/ghidra-artifacts/<target-id>/pipeline-state.yaml` (initial version)
+- `.work/ghidra-projects/<target-id>/` directory
+- `.work/reconstruction/<target-id>/` directory (with `reconstruction-manifest.yaml`, `CMakeLists.txt`, `.gitignore`)
+- (conditional) `.work/ghidra-artifacts/<target-id>/intake/archive-normalization.yaml`
 
-## Required Inputs
+**Available tools**:
+- `scripts/normalize-ar-archive.sh` (conditional: when input is an archive)
+- `scripts/reconstruction-init.sh`
+- `mkdir`, `cp`, filesystem operations
+- `yq` — YAML generation
 
-Prepare the planning brief with:
+**Strict prohibitions**:
+- ⛔ Must not run Ghidra (that is `intake-ghidra`'s responsibility)
+- ⛔ Must not analyze binary content
+- ⛔ Must not modify any `baseline/` or `evidence/` files
 
-- target name and binary or sample identity
-- source or provenance notes for the target
-- intended reverse-engineering scope and out-of-scope areas
-- expected deliverables for planning
-- existing repository constraints or local overlays that only tighten the
-  contract
+**Termination conditions**:
+- `target-identity.yaml` + `workspace-manifest.yaml` written
+- All directory structures created
+- `reconstruction-manifest.yaml` initialized
+- If archive input, `archive-normalization.yaml` status is `members_ready`
 
-## Runtime Choice UX
+**System prompt**:
 
-When the running skill genuinely needs the user to choose between scope
-boundaries, deliverable types, or other discrete intake options:
+```
+You are the P0 workspace initialization agent. Your responsibilities:
+1. Determine target-id from the user-provided path (normalize to lowercase+hyphens)
+2. Create .work/ghidra-artifacts/<target-id>/ and subdirectories
+3. Create .work/ghidra-projects/<target-id>/
+4. Run reconstruction-init.sh to initialize the reconstruction project
+5. Fill in target-identity.yaml and workspace-manifest.yaml
+6. If input is an ar archive, run normalize-ar-archive.sh
 
-1. If the runtime exposes a structured choice input tool (for example
-   `request_user_input`), use it instead of a plain-text list.
-2. Keep each option short, mutually exclusive, and user-facing.
-3. Put the recommended or default option first whenever the current intake
-   evidence clearly favors one, and state that recommendation briefly.
-4. Fall back to Markdown or plain-text lists only when no structured choice
-   input is available.
-5. If only one reviewed scope or deliverable path remains, do not force a
-   dialog; state the automatic default and the intake evidence supporting it.
+You are not responsible for discovering or running Ghidra. Terminate immediately
+when finished.
+```
 
-## How To Use This Skill
+---
 
-1. Fill in [`./planning-brief.md`](./planning-brief.md) with the intake facts
-   that are already known.
-2. Provide that brief to `speckit` either as the file itself or as an inline
-   paste.
-3. Check the generated `spec.md`, `plan.md`, and `tasks.md` against the same
-   intake contract before moving deeper into evidence or script work.
-4. If the generated artifacts drop an intake constraint, refine or regenerate
-   the planning artifacts rather than weakening this phase contract.
+### Agent: `intake-ghidra`
 
-## Example
+| Property | Value |
+|---|---|
+| **Agent ID** | `intake-ghidra` |
+| **Instances** | 1 |
+| **Lifecycle** | Short-lived |
+| **Role** | Discover local Ghidra installation, verify availability, capture help output |
+| **Parallelism** | ✅ Runs in parallel with `intake-workspace` |
 
-- Portable handoff example:
-  [`./examples/intake-speckit-handoff.md`](./examples/intake-speckit-handoff.md)
+**Inputs**:
+- Environment variables / common installation paths
+
+**Outputs**:
+- `.work/ghidra-artifacts/<target-id>/intake/ghidra-discovery.yaml`
+
+**Available tools**:
+- `scripts/discover-ghidra.sh`
+- Shell commands (`which`, `find`, `test -x`)
+- `$ANALYZE_HEADLESS -help`
+
+**Strict prohibitions**:
+- ⛔ Must not run analyzeHeadless for actual analysis
+- ⛔ Must not create Ghidra projects
+- ⛔ Must not fabricate help output (must capture from real binary)
+
+**Termination conditions**:
+- `ghidra-discovery.yaml` written
+- `analyze_headless_path` points to an actually executable file
+
+**System prompt**:
+
+```
+You are the P0 Ghidra discovery agent. Your sole responsibility:
+1. Run discover-ghidra.sh to find local Ghidra installation
+2. Run analyzeHeadless -help to capture real help output
+3. Write results to ghidra-discovery.yaml
+
+You never fabricate help text. If Ghidra is not found, report failure and
+terminate.
+```
+
+## Artifact Manifest
+
+| File | Format | Description |
+|---|---|---|
+| `intake/target-identity.yaml` | YAML | Target identity card |
+| `intake/workspace-manifest.yaml` | YAML | Workspace directory manifest |
+| `intake/ghidra-discovery.yaml` | YAML | Ghidra installation info |
+| `intake/archive-normalization.yaml` | YAML (conditional) | Archive normalization result |
+
+## Gate Check Matrix (P0)
+
+| ID | Check | Type |
+|---|---|---|
+| P0_01 | `intake/target-identity.yaml` exists | blocking |
+| P0_02 | Contains `target_id` field, non-empty | blocking |
+| P0_03 | Contains `binary_path` field, non-empty | blocking |
+| P0_04 | binary_path points to existing file | blocking |
+| P0_05 | `intake/workspace-manifest.yaml` exists | blocking |
+| P0_06 | artifact_root directory created | blocking |
+| P0_07 | `intake/ghidra-discovery.yaml` exists | blocking |
+| P0_08 | Contains `install_dir`, non-empty | blocking |
+| P0_09 | Contains `analyze_headless_path`, non-empty | blocking |
+| P0_10 | analyzeHeadless is executable | blocking |
+| P0_11 | reconstruction directory created | blocking |
+| P0_12 | `reconstruction-manifest.yaml` exists | blocking |
+| P0_13 | (conditional) If archive, normalization status = `members_ready` | blocking |
 
 ## Next Step Routing
 
-- Stay in intake when target identity, scope, or deliverables are still fuzzy.
-- Move to the evidence phase after intake is stable and planning needs replay,
-  extraction, or artifact expectations.
-- Move to script authoring and review when the plan introduces reusable
-  headless Ghidra scripts or checklist-governed script changes.
+- P0 gate passes → orchestrator automatically enters P1 (`headless-ghidra-baseline`).
