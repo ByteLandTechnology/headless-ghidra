@@ -721,6 +721,7 @@ BASELINE_COMMAND=(
   "${PROJECT_ROOT}"
   "${TARGET_ID}"
   -import "${BINARY_PATH}"
+  -analysisTimeoutPerFile 86400
   -scriptPath "$(dirname "${SCRIPT_PATH}")"
   -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" baseline
 )
@@ -730,6 +731,7 @@ DECOMPILE_COMMAND=(
   "${PROJECT_ROOT}"
   "${TARGET_ID}"
   -process "${PROGRAM_NAME}"
+  -analysisTimeoutPerFile 86400
   -scriptPath "$(dirname "${SCRIPT_PATH}")"
   -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" decompile
 )
@@ -739,6 +741,7 @@ REVIEW_EVIDENCE_COMMAND=(
   "${PROJECT_ROOT}"
   "${TARGET_ID}"
   -process "${PROGRAM_NAME}"
+  -analysisTimeoutPerFile 86400
   -scriptPath "$(dirname "${SCRIPT_PATH}")"
   -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}"
 )
@@ -748,6 +751,7 @@ TARGET_SELECTION_COMMAND=(
   "${PROJECT_ROOT}"
   "${TARGET_ID}"
   -process "${PROGRAM_NAME}"
+  -analysisTimeoutPerFile 86400
   -scriptPath "$(dirname "${SCRIPT_PATH}")"
   -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}"
 )
@@ -757,6 +761,7 @@ CALL_GRAPH_COMMAND=(
   "${PROJECT_ROOT}"
   "${TARGET_ID}"
   -process "${PROGRAM_NAME}"
+  -analysisTimeoutPerFile 86400
   -scriptPath "$(dirname "${SCRIPT_PATH}")"
   -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}"
 )
