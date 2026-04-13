@@ -720,428 +720,214 @@ if [[ -n "${BINARY_PATH}" ]]; then
   PROGRAM_NAME="$(basename "${BINARY_PATH}")"
 fi
 
-BASELINE_COMMAND=(
-  "${ANALYZE_HEADLESS}"
-  "${PROJECT_ROOT}"
-  "${TARGET_ID}"
-  -import "${BINARY_PATH}"
-  -analysisTimeoutPerFile 86400
-  -scriptPath "$(dirname "${SCRIPT_PATH}")"
-  -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" baseline
-)
+# Build a headless command with common base arguments.
+# Usage: build_headless_command "import|process" "post_script_args..."
+build_headless_command() {
+  local mode="$1"; shift
+  local -a cmd=(
+    "${ANALYZE_HEADLESS}"
+    "${PROJECT_ROOT}"
+    "${TARGET_ID}"
+  )
+  if [[ "$mode" == "import" ]]; then
+    cmd+=(-import "${BINARY_PATH}")
+  else
+    cmd+=(-process "${PROGRAM_NAME}")
+  fi
+  cmd+=(-analysisTimeoutPerFile 86400)
+  cmd+=(-scriptPath "$(dirname "${SCRIPT_PATH}")")
+  cmd+=(-postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" "$@")
+  printf '%s\n' "${cmd[@]}"
+}
 
-DECOMPILE_COMMAND=(
-  "${ANALYZE_HEADLESS}"
-  "${PROJECT_ROOT}"
-  "${TARGET_ID}"
-  -process "${PROGRAM_NAME}"
-  -analysisTimeoutPerFile 86400
-  -scriptPath "$(dirname "${SCRIPT_PATH}")"
-  -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" decompile
-)
+add_logging() {
+  local name="$1"; shift
+  local cmd_ref="$1"; shift
+  local -n cmd="$cmd_ref"
+  cmd+=(-log "${LOG_DIR}/${name}.run.log" -scriptlog "${LOG_DIR}/${name}.script.log")
+}
 
-REVIEW_EVIDENCE_COMMAND=(
-  "${ANALYZE_HEADLESS}"
-  "${PROJECT_ROOT}"
-  "${TARGET_ID}"
-  -process "${PROGRAM_NAME}"
-  -analysisTimeoutPerFile 86400
-  -scriptPath "$(dirname "${SCRIPT_PATH}")"
-  -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}"
-)
+declare -A COMMAND_VAR
+COMMAND_VAR[baseline]="BASELINE_COMMAND"
+COMMAND_VAR[decompile-selected]="DECOMPILE_COMMAND"
+COMMAND_VAR[review-evidence]="REVIEW_EVIDENCE_COMMAND"
+COMMAND_VAR[target-selection]="TARGET_SELECTION_COMMAND"
+COMMAND_VAR[call-graph]="CALL_GRAPH_COMMAND"
+COMMAND_VAR[apply-renames]="APPLY_RENAMES_COMMAND"
+COMMAND_VAR[verify-renames]="VERIFY_RENAMES_COMMAND"
+COMMAND_VAR[apply-signatures]="APPLY_SIGNATURES_COMMAND"
+COMMAND_VAR[verify-signatures]="VERIFY_SIGNATURES_COMMAND"
+COMMAND_VAR[lint-review-artifacts]="LINT_REVIEW_ARTIFACTS_COMMAND"
 
-TARGET_SELECTION_COMMAND=(
-  "${ANALYZE_HEADLESS}"
-  "${PROJECT_ROOT}"
-  "${TARGET_ID}"
-  -process "${PROGRAM_NAME}"
-  -analysisTimeoutPerFile 86400
-  -scriptPath "$(dirname "${SCRIPT_PATH}")"
-  -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}"
-)
-
-CALL_GRAPH_COMMAND=(
-  "${ANALYZE_HEADLESS}"
-  "${PROJECT_ROOT}"
-  "${TARGET_ID}"
-  -process "${PROGRAM_NAME}"
-  -analysisTimeoutPerFile 86400
-  -scriptPath "$(dirname "${SCRIPT_PATH}")"
-  -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}"
-)
+# Build commands from templates
+read -ra BASELINE_COMMAND <<<"$(build_headless_command import baseline)"
+read -ra DECOMPILE_COMMAND <<<"$(build_headless_command process decompile)"
+read -ra REVIEW_EVIDENCE_COMMAND <<<"$(build_headless_command process)"
+read -ra TARGET_SELECTION_COMMAND <<<"$(build_headless_command process)"
+read -ra CALL_GRAPH_COMMAND <<<"$(build_headless_command process)"
+read -ra APPLY_RENAMES_COMMAND <<<"$(build_headless_command process "${RENAME_LOG}")"
+read -ra VERIFY_RENAMES_COMMAND <<<"$(build_headless_command process "${RENAME_LOG}")"
+read -ra APPLY_SIGNATURES_COMMAND <<<"$(build_headless_command process "${SIGNATURE_LOG}")"
+read -ra VERIFY_SIGNATURES_COMMAND <<<"$(build_headless_command process "${SIGNATURE_LOG}")"
+read -ra LINT_REVIEW_ARTIFACTS_COMMAND <<<"$(build_headless_command process)"
 
 if [[ ${#SELECTED_FUNCTIONS[@]} -gt 0 ]]; then
   DECOMPILE_COMMAND+=("${SELECTED_FUNCTIONS[@]}")
 fi
-
-if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
-  BASELINE_COMMAND+=("${EXTRA_ARGS[@]}")
-  DECOMPILE_COMMAND+=("${EXTRA_ARGS[@]}")
-  CALL_GRAPH_COMMAND+=("${EXTRA_ARGS[@]}")
-  REVIEW_EVIDENCE_COMMAND+=("${EXTRA_ARGS[@]}")
-  TARGET_SELECTION_COMMAND+=("${EXTRA_ARGS[@]}")
-fi
-
-BASELINE_COMMAND+=(
-  -log "${LOG_DIR}/baseline.run.log"
-  -scriptlog "${LOG_DIR}/baseline.script.log"
-)
-
-DECOMPILE_COMMAND+=(
-  -log "${LOG_DIR}/decompile-selected.run.log"
-  -scriptlog "${LOG_DIR}/decompile-selected.script.log"
-)
-
-REVIEW_EVIDENCE_COMMAND+=(
-  -log "${LOG_DIR}/review-evidence.run.log"
-  -scriptlog "${LOG_DIR}/review-evidence.script.log"
-)
-
-TARGET_SELECTION_COMMAND+=(
-  -log "${LOG_DIR}/target-selection.run.log"
-  -scriptlog "${LOG_DIR}/target-selection.script.log"
-)
-
-CALL_GRAPH_COMMAND+=(
-  -log "${LOG_DIR}/call-graph.run.log"
-  -scriptlog "${LOG_DIR}/call-graph.script.log"
-)
-
-APPLY_RENAMES_COMMAND=(
-  "${ANALYZE_HEADLESS}"
-  "${PROJECT_ROOT}"
-  "${TARGET_ID}"
-  -process "${PROGRAM_NAME}"
-  -scriptPath "$(dirname "${SCRIPT_PATH}")"
-  -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" "${RENAME_LOG}"
-)
-
-VERIFY_RENAMES_COMMAND=(
-  "${ANALYZE_HEADLESS}"
-  "${PROJECT_ROOT}"
-  "${TARGET_ID}"
-  -process "${PROGRAM_NAME}"
-  -scriptPath "$(dirname "${SCRIPT_PATH}")"
-  -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" "${RENAME_LOG}"
-)
-
-APPLY_SIGNATURES_COMMAND=(
-  "${ANALYZE_HEADLESS}"
-  "${PROJECT_ROOT}"
-  "${TARGET_ID}"
-  -process "${PROGRAM_NAME}"
-  -scriptPath "$(dirname "${SCRIPT_PATH}")"
-  -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" "${SIGNATURE_LOG}"
-)
-
-VERIFY_SIGNATURES_COMMAND=(
-  "${ANALYZE_HEADLESS}"
-  "${PROJECT_ROOT}"
-  "${TARGET_ID}"
-  -process "${PROGRAM_NAME}"
-  -scriptPath "$(dirname "${SCRIPT_PATH}")"
-  -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" "${SIGNATURE_LOG}"
-)
-
-LINT_REVIEW_ARTIFACTS_COMMAND=(
-  "${ANALYZE_HEADLESS}"
-  "${PROJECT_ROOT}"
-  "${TARGET_ID}"
-  -process "${PROGRAM_NAME}"
-  -scriptPath "$(dirname "${SCRIPT_PATH}")"
-  -postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}"
-)
-
 if [[ ${#REVIEW_ARTIFACTS[@]} -gt 0 ]]; then
   LINT_REVIEW_ARTIFACTS_COMMAND+=("${REVIEW_ARTIFACTS[@]}")
 fi
-
 if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
-  APPLY_RENAMES_COMMAND+=("${EXTRA_ARGS[@]}")
-  VERIFY_RENAMES_COMMAND+=("${EXTRA_ARGS[@]}")
-  APPLY_SIGNATURES_COMMAND+=("${EXTRA_ARGS[@]}")
-  VERIFY_SIGNATURES_COMMAND+=("${EXTRA_ARGS[@]}")
-  LINT_REVIEW_ARTIFACTS_COMMAND+=("${EXTRA_ARGS[@]}")
+  for var in BASELINE_COMMAND DECOMPILE_COMMAND CALL_GRAPH_COMMAND \
+              REVIEW_EVIDENCE_COMMAND TARGET_SELECTION_COMMAND \
+              APPLY_RENAMES_COMMAND VERIFY_RENAMES_COMMAND \
+              APPLY_SIGNATURES_COMMAND VERIFY_SIGNATURES_COMMAND \
+              LINT_REVIEW_ARTIFACTS_COMMAND; do
+    read -ra tmp <<<"${!var}"
+    tmp+=("${EXTRA_ARGS[@]}")
+    declare -a "$var"='("${tmp[@]}")'
+  done
 fi
 
-APPLY_RENAMES_COMMAND+=(
-  -log "${LOG_DIR}/apply-renames.run.log"
-  -scriptlog "${LOG_DIR}/apply-renames.script.log"
-)
+add_logging baseline BASELINE_COMMAND
+add_logging decompile-selected DECOMPILE_COMMAND
+add_logging review-evidence REVIEW_EVIDENCE_COMMAND
+add_logging target-selection TARGET_SELECTION_COMMAND
+add_logging call-graph CALL_GRAPH_COMMAND
+add_logging apply-renames APPLY_RENAMES_COMMAND
+add_logging verify-renames VERIFY_RENAMES_COMMAND
+add_logging apply-signatures APPLY_SIGNATURES_COMMAND
+add_logging verify-signatures VERIFY_SIGNATURES_COMMAND
+add_logging lint-review-artifacts LINT_REVIEW_ARTIFACTS_COMMAND
 
-VERIFY_RENAMES_COMMAND+=(
-  -log "${LOG_DIR}/verify-renames.run.log"
-  -scriptlog "${LOG_DIR}/verify-renames.script.log"
-)
+# plan-* output helper
+plan_output() {
+  local action="$1"; shift
+  local extra_vars="$1"; shift
+  local var_name="${COMMAND_VAR[$action]}"
+  local -n cmd_ref="$var_name"
+  cat <<EOF
+ACTION=${action}
+TARGET_ID=${TARGET_ID}
+BINARY_PATH=${BINARY_PATH}
+PROJECT_DIR=${PROJECT_DIR}
+ARTIFACTS_DIR=${ARTIFACTS_DIR}
+SCRIPT_PATH=${SCRIPT_PATH}
+ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
+$([[ -n "$extra_vars" ]] && echo "$extra_vars")
+COMMAND=$(printf '%q ' "${cmd_ref[@]}")
+EOF
+  if [[ $# -gt 0 ]]; then
+    printf '\nStage contract:\n'
+    for line in "$@"; do printf '  - %s\n' "$line"; done
+  fi
+}
 
-APPLY_SIGNATURES_COMMAND+=(
-  -log "${LOG_DIR}/apply-signatures.run.log"
-  -scriptlog "${LOG_DIR}/apply-signatures.script.log"
-)
-
-VERIFY_SIGNATURES_COMMAND+=(
-  -log "${LOG_DIR}/verify-signatures.run.log"
-  -scriptlog "${LOG_DIR}/verify-signatures.script.log"
-)
-
-LINT_REVIEW_ARTIFACTS_COMMAND+=(
-  -log "${LOG_DIR}/lint-review-artifacts.run.log"
-  -scriptlog "${LOG_DIR}/lint-review-artifacts.script.log"
-)
+execute_action() {
+  local action="$1"
+  mkdir -p "${PROJECT_ROOT}" "${ARTIFACTS_DIR}" "${LOG_DIR}"
+  run_checked_action "$action" "${!COMMAND_VAR[$action]}"
+}
 
 case "${ACTION}" in
   plan-baseline)
-    cat <<EOF
-ACTION=${ACTION}
-TARGET_ID=${TARGET_ID}
-BINARY_PATH=${BINARY_PATH}
-PROJECT_DIR=${PROJECT_DIR}
-ARTIFACTS_DIR=${ARTIFACTS_DIR}
-SCRIPT_PATH=${SCRIPT_PATH}
-ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-COMMAND=$(printf '%q ' "${BASELINE_COMMAND[@]}")
-
-Stage contract:
-  - This action is for \`Baseline Evidence\` only.
-  - It must not export decompiled bodies.
-  - Review the resulting artifacts before \`Selected Decompilation\`.
-EOF
+    plan_output baseline ""
+      "This action is for \`Baseline Evidence\` only." \
+      "It must not export decompiled bodies." \
+      "Review the resulting artifacts before \`Selected Decompilation\`."
     exit 0
     ;;
   baseline)
-    mkdir -p "${PROJECT_ROOT}"
-    mkdir -p "${ARTIFACTS_DIR}"
-    mkdir -p "${LOG_DIR}"
-    run_checked_action baseline "${BASELINE_COMMAND[@]}"
+    execute_action baseline
     ;;
   plan-call-graph)
-    cat <<EOF
-ACTION=${ACTION}
-TARGET_ID=${TARGET_ID}
-BINARY_PATH=${BINARY_PATH}
-PROJECT_DIR=${PROJECT_DIR}
-ARTIFACTS_DIR=${ARTIFACTS_DIR}
-SCRIPT_PATH=${SCRIPT_PATH}
-ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-CALL_GRAPH_DETAIL=${ARTIFACTS_DIR}/call-graph-detail.yaml
-COMMAND=$(printf '%q ' "${CALL_GRAPH_COMMAND[@]}")
-
-Stage contract:
-  - This action is for \`Baseline Evidence Follow-Up\`.
-  - It exports focused caller/callee detail without mutating program metadata.
-  - Use it when \`xrefs-and-callgraph.md\` is too coarse for outside-in target selection.
-EOF
+    plan_output call-graph "CALL_GRAPH_DETAIL=${ARTIFACTS_DIR}/call-graph-detail.yaml" \
+      "This action is for \`Baseline Evidence Follow-Up\`." \
+      "It exports focused caller/callee detail without mutating program metadata." \
+      "Use it when \`xrefs-and-callgraph.yaml\` is too coarse for outside-in target selection."
     exit 0
     ;;
   call-graph)
-    mkdir -p "${PROJECT_ROOT}"
-    mkdir -p "${ARTIFACTS_DIR}"
-    mkdir -p "${LOG_DIR}"
-    run_checked_action call-graph "${CALL_GRAPH_COMMAND[@]}"
+    execute_action call-graph
     ;;
   plan-review-evidence)
-    cat <<EOF
-ACTION=${ACTION}
-TARGET_ID=${TARGET_ID}
-BINARY_PATH=${BINARY_PATH}
-PROJECT_DIR=${PROJECT_DIR}
-ARTIFACTS_DIR=${ARTIFACTS_DIR}
-SCRIPT_PATH=${SCRIPT_PATH}
-ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-EVIDENCE_CANDIDATES=${ARTIFACTS_DIR}/evidence-candidates.yaml
-COMMAND=$(printf '%q ' "${REVIEW_EVIDENCE_COMMAND[@]}")
-
-Stage contract:
-  - This action is for \`Evidence Review\`.
-  - It exports a reviewable candidate surface without mutating program metadata.
-  - Keep metric-style fields secondary and confirm frontier eligibility before promoting any row into \`target-selection.yaml\`.
-EOF
+    plan_output review-evidence "EVIDENCE_CANDIDATES=${ARTIFACTS_DIR}/evidence-candidates.yaml" \
+      "This action is for \`Evidence Review\`." \
+      "It exports a reviewable candidate surface without mutating program metadata." \
+      "Keep metric-style fields secondary and confirm frontier eligibility before promoting any row into \`target-selection.yaml\`."
     exit 0
     ;;
   review-evidence)
-    mkdir -p "${PROJECT_ROOT}"
-    mkdir -p "${ARTIFACTS_DIR}"
-    mkdir -p "${LOG_DIR}"
-    run_checked_action review-evidence "${REVIEW_EVIDENCE_COMMAND[@]}"
+    execute_action review-evidence
     ;;
   plan-target-selection)
-    cat <<EOF
-ACTION=${ACTION}
-TARGET_ID=${TARGET_ID}
-BINARY_PATH=${BINARY_PATH}
-PROJECT_DIR=${PROJECT_DIR}
-ARTIFACTS_DIR=${ARTIFACTS_DIR}
-SCRIPT_PATH=${SCRIPT_PATH}
-ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-TARGET_SELECTION=${ARTIFACTS_DIR}/target-selection.yaml
-COMMAND=$(printf '%q ' "${TARGET_SELECTION_COMMAND[@]}")
-
-Stage contract:
-  - This action is for \`Target Selection\`.
-  - It exports a reviewable selection surface with one automatic default target.
-  - Confirm the frontier basis and matched-only gate before moving inward.
-EOF
+    plan_output target-selection "TARGET_SELECTION=${ARTIFACTS_DIR}/target-selection.yaml" \
+      "This action is for \`Target Selection\`." \
+      "It exports a reviewable selection surface with one automatic default target." \
+      "Confirm the frontier basis and matched-only gate before moving inward."
     exit 0
     ;;
   target-selection)
-    mkdir -p "${PROJECT_ROOT}"
-    mkdir -p "${ARTIFACTS_DIR}"
-    mkdir -p "${LOG_DIR}"
-    run_checked_action target-selection "${TARGET_SELECTION_COMMAND[@]}"
+    execute_action target-selection
     ;;
   plan-decompile)
-    cat <<EOF
-ACTION=${ACTION}
-TARGET_ID=${TARGET_ID}
-BINARY_PATH=${BINARY_PATH}
-PROJECT_DIR=${PROJECT_DIR}
-ARTIFACTS_DIR=${ARTIFACTS_DIR}
-SCRIPT_PATH=${SCRIPT_PATH}
-ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-SELECTED_FUNCTIONS=$(printf '%q ' "${SELECTED_FUNCTIONS[@]}")
-COMMAND=$(printf '%q ' "${DECOMPILE_COMMAND[@]}")
-
-Stage contract:
-  - This action is for \`Selected Decompilation\` only.
-  - Record selection rationale and role/name/prototype evidence before running it.
-  - Preserve outside-in order when choosing the selected functions.
-EOF
+    plan_output decompile-selected "SELECTED_FUNCTIONS=$(printf '%q ' "${SELECTED_FUNCTIONS[@]}")" \
+      "This action is for \`Selected Decompilation\` only." \
+      "Record selection rationale and role/name/prototype evidence before running it." \
+      "Preserve outside-in order when choosing the selected functions."
     exit 0
     ;;
   decompile-selected)
-    mkdir -p "${PROJECT_ROOT}"
-    mkdir -p "${ARTIFACTS_DIR}"
-    mkdir -p "${LOG_DIR}"
-    run_checked_action decompile-selected "${DECOMPILE_COMMAND[@]}"
+    execute_action decompile-selected
     ;;
   plan-apply-renames)
-    cat <<EOF
-ACTION=${ACTION}
-TARGET_ID=${TARGET_ID}
-BINARY_PATH=${BINARY_PATH}
-PROJECT_DIR=${PROJECT_DIR}
-ARTIFACTS_DIR=${ARTIFACTS_DIR}
-SCRIPT_PATH=${SCRIPT_PATH}
-RENAME_LOG=${RENAME_LOG}
-APPLY_REPORT=${ARTIFACTS_DIR}/rename-apply-report.md
-ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-COMMAND=$(printf '%q ' "${APPLY_RENAMES_COMMAND[@]}")
-
-Stage contract:
-  - This action applies reviewable rename entries from \`renaming-log.md\`.
-  - Only rows with executable status should mutate the project.
-  - The apply report must remain under \`${ARTIFACTS_DIR}\`.
-EOF
+    plan_output apply-renames "RENAME_LOG=${RENAME_LOG}" \
+      "This action applies reviewable rename entries from \`renaming-log.md\`." \
+      "Only rows with executable status should mutate the project." \
+      "The apply report must remain under \`${ARTIFACTS_DIR}\`."
     exit 0
     ;;
   apply-renames)
-    mkdir -p "${PROJECT_ROOT}"
-    mkdir -p "${ARTIFACTS_DIR}"
-    mkdir -p "${LOG_DIR}"
-    run_checked_action apply-renames "${APPLY_RENAMES_COMMAND[@]}"
+    execute_action apply-renames
     ;;
   plan-verify-renames)
-    cat <<EOF
-ACTION=${ACTION}
-TARGET_ID=${TARGET_ID}
-BINARY_PATH=${BINARY_PATH}
-PROJECT_DIR=${PROJECT_DIR}
-ARTIFACTS_DIR=${ARTIFACTS_DIR}
-SCRIPT_PATH=${SCRIPT_PATH}
-RENAME_LOG=${RENAME_LOG}
-VERIFY_REPORT=${ARTIFACTS_DIR}/rename-verification-report.md
-ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-COMMAND=$(printf '%q ' "${VERIFY_RENAMES_COMMAND[@]}")
-
-Stage contract:
-  - This action verifies rename-plan rows against the current project state.
-  - It does not invent missing rename results.
-  - The verification report must remain under \`${ARTIFACTS_DIR}\`.
-EOF
+    plan_output verify-renames "RENAME_LOG=${RENAME_LOG}" \
+      "This action verifies rename-plan rows against the current project state." \
+      "It does not invent missing rename results." \
+      "The verification report must remain under \`${ARTIFACTS_DIR}\`."
     exit 0
     ;;
   verify-renames)
-    mkdir -p "${PROJECT_ROOT}"
-    mkdir -p "${ARTIFACTS_DIR}"
-    mkdir -p "${LOG_DIR}"
-    run_checked_action verify-renames "${VERIFY_RENAMES_COMMAND[@]}"
+    execute_action verify-renames
     ;;
   plan-apply-signatures)
-    cat <<EOF
-ACTION=${ACTION}
-TARGET_ID=${TARGET_ID}
-BINARY_PATH=${BINARY_PATH}
-PROJECT_DIR=${PROJECT_DIR}
-ARTIFACTS_DIR=${ARTIFACTS_DIR}
-SCRIPT_PATH=${SCRIPT_PATH}
-SIGNATURE_LOG=${SIGNATURE_LOG}
-APPLY_REPORT=${ARTIFACTS_DIR}/signature-apply-report.md
-ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-COMMAND=$(printf '%q ' "${APPLY_SIGNATURES_COMMAND[@]}")
-
-Stage contract:
-  - This action applies reviewable signature entries from \`signature-log.md\`.
-  - Only executable rows should mutate function names, return types, parameters, or calling conventions.
-  - The apply report must remain under \`${ARTIFACTS_DIR}\`.
-EOF
+    plan_output apply-signatures "SIGNATURE_LOG=${SIGNATURE_LOG}" \
+      "This action applies reviewable signature entries from \`signature-log.md\`." \
+      "Only executable rows should mutate function names, return types, parameters, or calling conventions." \
+      "The apply report must remain under \`${ARTIFACTS_DIR}\`."
     exit 0
     ;;
   apply-signatures)
-    mkdir -p "${PROJECT_ROOT}"
-    mkdir -p "${ARTIFACTS_DIR}"
-    mkdir -p "${LOG_DIR}"
-    run_checked_action apply-signatures "${APPLY_SIGNATURES_COMMAND[@]}"
+    execute_action apply-signatures
     ;;
   plan-verify-signatures)
-    cat <<EOF
-ACTION=${ACTION}
-TARGET_ID=${TARGET_ID}
-BINARY_PATH=${BINARY_PATH}
-PROJECT_DIR=${PROJECT_DIR}
-ARTIFACTS_DIR=${ARTIFACTS_DIR}
-SCRIPT_PATH=${SCRIPT_PATH}
-SIGNATURE_LOG=${SIGNATURE_LOG}
-VERIFY_REPORT=${ARTIFACTS_DIR}/signature-verification-report.md
-ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-COMMAND=$(printf '%q ' "${VERIFY_SIGNATURES_COMMAND[@]}")
-
-Stage contract:
-  - This action verifies signature-plan rows against current project state.
-  - It does not invent missing signature results.
-  - The verification report must remain under \`${ARTIFACTS_DIR}\`.
-EOF
+    plan_output verify-signatures "SIGNATURE_LOG=${SIGNATURE_LOG}" \
+      "This action verifies signature-plan rows against current project state." \
+      "It does not invent missing signature results." \
+      "The verification report must remain under \`${ARTIFACTS_DIR}\`."
     exit 0
     ;;
   verify-signatures)
-    mkdir -p "${PROJECT_ROOT}"
-    mkdir -p "${ARTIFACTS_DIR}"
-    mkdir -p "${LOG_DIR}"
-    run_checked_action verify-signatures "${VERIFY_SIGNATURES_COMMAND[@]}"
+    execute_action verify-signatures
     ;;
   plan-lint-review-artifacts)
-    cat <<EOF
-ACTION=${ACTION}
-TARGET_ID=${TARGET_ID}
-BINARY_PATH=${BINARY_PATH}
-PROJECT_DIR=${PROJECT_DIR}
-ARTIFACTS_DIR=${ARTIFACTS_DIR}
-SCRIPT_PATH=${SCRIPT_PATH}
-ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-LINT_REPORT=${ARTIFACTS_DIR}/artifact-lint-report.md
-REVIEW_ARTIFACTS=$(printf '%q ' "${REVIEW_ARTIFACTS[@]}")
-COMMAND=$(printf '%q ' "${LINT_REVIEW_ARTIFACTS_COMMAND[@]}")
-
-Stage contract:
-  - This action lints reviewable manifests such as \`renaming-log.md\` and \`signature-log.md\`.
-  - Parse failures must still produce a reviewable lint report.
-  - The lint report must remain under \`${ARTIFACTS_DIR}\`.
-EOF
+    plan_output lint-review-artifacts "" \
+      "This action lints reviewable manifests such as \`renaming-log.md\` and \`signature-log.md\`." \
+      "Parse failures must still produce a reviewable lint report." \
+      "The lint report must remain under \`${ARTIFACTS_DIR}\`."
     exit 0
     ;;
   lint-review-artifacts)
-    mkdir -p "${PROJECT_ROOT}"
-    mkdir -p "${ARTIFACTS_DIR}"
-    mkdir -p "${LOG_DIR}"
-    run_checked_action lint-review-artifacts "${LINT_REVIEW_ARTIFACTS_COMMAND[@]}"
+    execute_action lint-review-artifacts
     ;;
 esac
