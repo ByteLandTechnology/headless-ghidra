@@ -336,17 +336,21 @@ check_report_failed_count() {
 
 check_baseline_artifacts() {
   local base="${ARTIFACTS_DIR}"
-  require_file "${base}/function-names.md" "Baseline export must emit observed functions." || return 1
-  require_file "${base}/imports-and-libraries.md" "Baseline export must emit import evidence." || return 1
-  require_file "${base}/strings-and-constants.md" "Baseline export must emit string evidence." || return 1
-  require_file "${base}/types-and-structs.md" "Baseline export must emit type evidence." || return 1
-  require_file "${base}/xrefs-and-callgraph.md" "Baseline export must emit xref evidence." || return 1
-  require_file "${base}/decompiled-output.md" "Baseline export must emit the blocked decompilation placeholder." || return 1
+  require_file "${base}/function-names.yaml" "Baseline export must emit observed functions." || return 1
+  require_file "${base}/imports-and-libraries.yaml" "Baseline export must emit import evidence." || return 1
+  require_file "${base}/strings-and-constants.yaml" "Baseline export must emit string evidence." || return 1
+  require_file "${base}/types-and-structs.yaml" "Baseline export must emit type evidence." || return 1
+  require_file "${base}/xrefs-and-callgraph.yaml" "Baseline export must emit xref evidence." || return 1
+  require_file "${base}/decompiled-output.yaml" "Baseline export must emit the blocked decompilation placeholder." || return 1
   require_file "${base}/renaming-log.md" "Baseline export must emit the reviewable rename schema." || return 1
   require_file "${base}/signature-log.md" "Baseline export must emit the reviewable signature schema." || return 1
-  if ! rg -n '^## Status$' "${base}/decompiled-output.md" >/dev/null 2>&1; then
-    printf 'Baseline placeholder is malformed: %s\n' "${base}/decompiled-output.md" >&2
-    return 1
+  if command -v yq &>/dev/null; then
+    local fn_len
+    fn_len=$(yq -r '.functions | length' "${base}/decompiled-output.yaml" 2>/dev/null || echo "-1")
+    if [[ "$fn_len" != "0" ]]; then
+      printf 'Baseline decompiled-output.yaml must have empty functions array: %s\n' "${base}/decompiled-output.yaml" >&2
+      return 1
+    fi
   fi
 }
 
@@ -397,13 +401,13 @@ run_checked_action() {
       check_baseline_artifacts || validation_status=$?
       ;;
     call-graph)
-      check_export_artifact "${ARTIFACTS_DIR}/call-graph-detail.md" "Detailed call graph export" || validation_status=$?
+      check_export_artifact "${ARTIFACTS_DIR}/call-graph-detail.yaml" "Detailed call graph export" || validation_status=$?
       ;;
     review-evidence)
-      check_export_artifact "${ARTIFACTS_DIR}/evidence-candidates.md" "Evidence review" || validation_status=$?
+      check_export_artifact "${ARTIFACTS_DIR}/evidence-candidates.yaml" "Evidence review" || validation_status=$?
       ;;
     target-selection)
-      check_export_artifact "${ARTIFACTS_DIR}/target-selection.md" "Target selection" || validation_status=$?
+      check_export_artifact "${ARTIFACTS_DIR}/target-selection.yaml" "Target selection" || validation_status=$?
       ;;
     decompile-selected)
       check_decompile_artifacts || validation_status=$?
@@ -919,7 +923,7 @@ PROJECT_DIR=${PROJECT_DIR}
 ARTIFACTS_DIR=${ARTIFACTS_DIR}
 SCRIPT_PATH=${SCRIPT_PATH}
 ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-CALL_GRAPH_DETAIL=${ARTIFACTS_DIR}/call-graph-detail.md
+CALL_GRAPH_DETAIL=${ARTIFACTS_DIR}/call-graph-detail.yaml
 COMMAND=$(printf '%q ' "${CALL_GRAPH_COMMAND[@]}")
 
 Stage contract:
@@ -944,13 +948,13 @@ PROJECT_DIR=${PROJECT_DIR}
 ARTIFACTS_DIR=${ARTIFACTS_DIR}
 SCRIPT_PATH=${SCRIPT_PATH}
 ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-EVIDENCE_CANDIDATES=${ARTIFACTS_DIR}/evidence-candidates.md
+EVIDENCE_CANDIDATES=${ARTIFACTS_DIR}/evidence-candidates.yaml
 COMMAND=$(printf '%q ' "${REVIEW_EVIDENCE_COMMAND[@]}")
 
 Stage contract:
   - This action is for \`Evidence Review\`.
   - It exports a reviewable candidate surface without mutating program metadata.
-  - Keep metric-style fields secondary and confirm frontier eligibility before promoting any row into \`target-selection.md\`.
+  - Keep metric-style fields secondary and confirm frontier eligibility before promoting any row into \`target-selection.yaml\`.
 EOF
     exit 0
     ;;
@@ -969,7 +973,7 @@ PROJECT_DIR=${PROJECT_DIR}
 ARTIFACTS_DIR=${ARTIFACTS_DIR}
 SCRIPT_PATH=${SCRIPT_PATH}
 ANALYZE_HEADLESS=${ANALYZE_HEADLESS}
-TARGET_SELECTION=${ARTIFACTS_DIR}/target-selection.md
+TARGET_SELECTION=${ARTIFACTS_DIR}/target-selection.yaml
 COMMAND=$(printf '%q ' "${TARGET_SELECTION_COMMAND[@]}")
 
 Stage contract:
