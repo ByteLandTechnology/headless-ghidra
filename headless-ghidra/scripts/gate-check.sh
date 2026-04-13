@@ -89,6 +89,70 @@ yaml_array_length() {
   fi
 }
 
+yaml_array_all_have_fields() {
+  local file="$1" array_path="$2"
+  shift 2
+  local fields=("$@")
+  if ! command -v yq &>/dev/null; then
+    echo "fail"
+    return
+  fi
+  local len
+  len=$(yq -r "$array_path | length" "$file" 2>/dev/null || echo "0")
+  [[ "$len" -eq 0 ]] && { echo "fail"; return; }
+  for field in "${fields[@]}"; do
+    local missing
+    missing=$(yq -r "$array_path | map(select(.$field == null or .$field == \"\")) | length" "$file" 2>/dev/null || echo "1")
+    [[ "$missing" -ne 0 ]] && { echo "fail"; return; }
+  done
+  echo "pass"
+}
+
+yaml_no_duplicate_values() {
+  local file="$1" array_path="$2" field="$3"
+  if ! command -v yq &>/dev/null; then
+    echo "fail"
+    return
+  fi
+  local total unique
+  total=$(yq -r "$array_path | map(.$field) | length" "$file" 2>/dev/null || echo "0")
+  unique=$(yq -r "$array_path | map(.$field) | unique | length" "$file" 2>/dev/null || echo "0")
+  [[ "$total" == "$unique" ]] && echo "pass" || echo "fail"
+}
+
+yaml_all_field_equals() {
+  local file="$1" array_path="$2" field="$3" expected="$4"
+  if ! command -v yq &>/dev/null; then
+    echo "fail"
+    return
+  fi
+  local mismatched
+  mismatched=$(yq -r "$array_path | map(select(.$field != \"$expected\")) | length" "$file" 2>/dev/null || echo "1")
+  [[ "$mismatched" -eq 0 ]] && echo "pass" || echo "fail"
+}
+
+yaml_field_equals() {
+  local file="$1" field="$2" expected="$3"
+  if command -v yq &>/dev/null; then
+    local val
+    val=$(yq -r "$field // \"\"" "$file" 2>/dev/null || echo "")
+    [[ "$val" == "$expected" ]] && echo "pass" || echo "fail"
+  else
+    echo "fail"
+  fi
+}
+
+yaml_field_numeric_equals() {
+  local file="$1" field="$2" expected="$3"
+  if command -v yq &>/dev/null; then
+    local val
+    val=$(yq -r "$field // \"-1\"" "$file" 2>/dev/null || echo "-1")
+    [[ "$val" == "$expected" ]] && echo "pass" || echo "fail"
+  else
+    echo "fail"
+  fi
+}
+
 AR="$ARTIFACT_ROOT"
 
 case "$GATE" in
@@ -145,6 +209,8 @@ case "$GATE" in
     anchor_count=$(yaml_array_length "$AR/evidence/anchor-summary.yaml" '.anchors')
     [[ "$anchor_count" -ge 1 ]] && r="pass" || r="fail"
     check P2_04 "anchor-summary has >= 1 anchor" blocking "$r"
+    check P2_05 "every anchor has address + frontier_reason" blocking "$(yaml_array_all_have_fields "$AR/evidence/anchor-summary.yaml" '.anchors' address frontier_reason)"
+    check P2_06 "every library has confidence + evidence" blocking "$(yaml_array_all_have_fields "$AR/evidence/library-identification.yaml" '.libraries' confidence evidence)"
     ;;
 
   P3)
@@ -155,6 +221,9 @@ case "$GATE" in
     fn_count=$(yaml_array_length "$manifest" '.functions')
     [[ "$fn_count" -ge 1 ]] && r="pass" || r="fail"
     check P3_02 "functions list non-empty" blocking "$r"
+    check P3_03 "every function has address + frontier_reason + question_to_answer" blocking "$(yaml_array_all_have_fields "$manifest" '.functions' address frontier_reason question_to_answer)"
+    check P3_04 "no duplicate addresses" blocking "$(yaml_no_duplicate_values "$manifest" '.functions' address)"
+    check P3_05 "every function status == pending" blocking "$(yaml_all_field_equals "$manifest" '.functions' status pending)"
     ;;
 
   P5)
@@ -165,8 +234,46 @@ case "$GATE" in
     [[ -n "$has_c" ]] && r="pass" || r="fail"
     check P5_01 "decompiled-output/ contains .c file" blocking "$r"
     check P5_02 "decompilation-record.yaml exists" blocking "$(file_exists "$fn_dir/decompilation-record.yaml")"
+    check P5_03 "decompilation-record has all required fields" blocking "$(yaml_array_all_have_fields "$fn_dir/decompilation-record.yaml" '.' function_id function_name address decompiled_source)"
     check P5_04 "semantic-record.yaml exists" blocking "$(file_exists "$fn_dir/semantic-record.yaml")"
+    check P5_05 "role/name/prototype evidence has >= 2 items" blocking "$(
+      if command -v yq &>/dev/null && [[ -f "$fn_dir/semantic-record.yaml" ]]; then
+        role=$(yq -r '.role_evidence // [] | length' "$fn_dir/semantic-record.yaml" 2>/dev/null || echo "0")
+        name=$(yq -r '.name_evidence // [] | length' "$fn_dir/semantic-record.yaml" 2>/dev/null || echo "0")
+        proto=$(yq -r '.prototype_evidence // [] | length' "$fn_dir/semantic-record.yaml" 2>/dev/null || echo "0")
+        total=$((role + name + proto))
+        [[ "$total" -ge 2 ]] && echo "pass" || echo "fail"
+      else
+        echo "fail"
+      fi
+    )"
     check P5_06 "source-comparison.yaml exists" blocking "$(file_exists "$fn_dir/source-comparison.yaml")"
+    check P5_07 "reference_status is set" blocking "$(yaml_field_nonempty "$fn_dir/source-comparison.yaml" '.reference_status')"
+    check P5_08 "verify-report has no failed entries" blocking "$(
+      if [[ -f "$fn_dir/verify-report.yaml" ]] && command -v yq &>/dev/null; then
+        failed=$(yq -r '.results // [] | map(select(.status == "failed")) | length' "$fn_dir/verify-report.yaml" 2>/dev/null || echo "1")
+        [[ "$failed" -eq 0 ]] && echo "pass" || echo "fail"
+      else
+        echo "fail"
+      fi
+    )"
+
+    # P5_09: reconstruction project .c + .h written
+    recon_root="${AR/ghidra-artifacts/reconstruction}"
+    fn_name=""
+    if command -v yq &>/dev/null && [[ -f "$fn_dir/decompilation-record.yaml" ]]; then
+      fn_name=$(yq -r '.function_name // ""' "$fn_dir/decompilation-record.yaml" 2>/dev/null || echo "")
+    fi
+    if [[ -n "$fn_name" ]]; then
+      has_src="fail"; has_hdr="fail"
+      [[ -f "$recon_root/src/${fn_name}.c" ]] && has_src="pass"
+      [[ -f "$recon_root/include/${fn_name}.h" ]] && has_hdr="pass"
+      [[ "$has_src" == "pass" && "$has_hdr" == "pass" ]] && r="pass" || r="fail"
+    else
+      r="fail"
+    fi
+    check P5_09 "reconstruction project .c + .h written" blocking "$r"
+    check P5_10 "reconstruction-manifest.yaml updated" blocking "$(file_exists "$recon_root/reconstruction-manifest.yaml")"
     ;;
 
   P6)
@@ -178,7 +285,9 @@ case "$GATE" in
     check P6_01 "test-inputs/ has >= 1 source file" blocking "$r"
     check P6_02 "frida-io-recording.yaml exists" blocking "$(file_exists "$fn_dir/frida-io-recording.yaml")"
     check P6_03 "verification-result.yaml exists" blocking "$(file_exists "$fn_dir/verification-result.yaml")"
-    check P6_04 "status == verified" blocking "$(yaml_field_nonempty "$fn_dir/verification-result.yaml" '.status | select(. == "verified")')"
+    check P6_04 "status == verified" blocking "$(yaml_field_equals "$fn_dir/verification-result.yaml" '.status' 'verified')"
+    check P6_05 "test_summary.overall.failed == 0" blocking "$(yaml_field_numeric_equals "$fn_dir/verification-result.yaml" '.test_summary.overall.failed' '0')"
+    check P6_06 "gate_verdict == pass" blocking "$(yaml_field_equals "$fn_dir/verification-result.yaml" '.gate_verdict' 'pass')"
     ;;
 
   *)
