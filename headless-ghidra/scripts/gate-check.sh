@@ -186,10 +186,11 @@ case "$GATE" in
     ;;
 
   P1)
-    for f in function-names imports-and-libraries strings-and-constants types-and-structs xrefs-and-callgraph; do
-      check "P1_$(printf '%02d' $((++_p1_idx)))" "baseline/${f}.yaml exists" blocking "$(file_exists "$AR/baseline/${f}.yaml")"
-    done
-    _p1_idx=5
+    check P1_01 "baseline/function-names.yaml exists" blocking "$(file_exists "$AR/baseline/function-names.yaml")"
+    check P1_02 "baseline/imports-and-libraries.yaml exists" blocking "$(file_exists "$AR/baseline/imports-and-libraries.yaml")"
+    check P1_03 "baseline/strings-and-constants.yaml exists" blocking "$(file_exists "$AR/baseline/strings-and-constants.yaml")"
+    check P1_04 "baseline/types-and-structs.yaml exists" blocking "$(file_exists "$AR/baseline/types-and-structs.yaml")"
+    check P1_05 "baseline/xrefs-and-callgraph.yaml exists" blocking "$(file_exists "$AR/baseline/xrefs-and-callgraph.yaml")"
     check P1_06 "decompiled-output.yaml exists with empty functions" blocking "$(file_exists "$AR/baseline/decompiled-output.yaml")"
 
     for f in function-names imports-and-libraries strings-and-constants types-and-structs xrefs-and-callgraph decompiled-output; do

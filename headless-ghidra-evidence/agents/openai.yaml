@@ -1,4 +1,0 @@
-interface:
-  display_name: "Headless Ghidra Evidence Review"
-  short_description: "Plan evidence extraction and audit"
-  default_prompt: "Use $headless-ghidra-evidence to define replayable evidence extraction and audit expectations for this task."

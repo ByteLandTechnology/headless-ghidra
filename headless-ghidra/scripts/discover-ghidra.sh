@@ -106,8 +106,9 @@ search_common_installs() {
   for root in "${roots[@]}"; do
     [[ -d "${root}" ]] || continue
     while IFS= read -r candidate; do
-      if normalize_install_dir "${candidate}" >/dev/null; then
-        normalize_install_dir "${candidate}"
+      resolved="$(normalize_install_dir "${candidate}" || true)"
+      if [[ -n "${resolved}" ]]; then
+        printf '%s\n' "${resolved}"
         return 0
       fi
     done < <(find "${root}" -maxdepth 3 \( -name 'ghidra*' -o -name 'Ghidra.app' \) 2>/dev/null | sort)
