@@ -176,17 +176,14 @@ ensure_runtime_path() {
 }
 
 append_markdown_bullet() {
-  local array_name="$1"
-  local value="$2"
-  eval "${array_name}+=(\"\${value}\")"
+  local -n arr="$1"
+  arr+=("$2")
 }
 
 emit_bullets() {
-  local array_name="$1"
-  local -a items=()
+  local -n arr="$1"
   local line=""
-  eval "items=(\"\${${array_name}[@]-}\")"
-  for line in "${items[@]}"; do
+  for line in "${arr[@]}"; do
     if [[ -n "${line}" ]]; then
       printf -- '- %s\n' "${line}"
     fi
@@ -194,11 +191,9 @@ emit_bullets() {
 }
 
 emit_table_rows() {
-  local array_name="$1"
-  local -a items=()
+  local -n arr="$1"
   local line=""
-  eval "items=(\"\${${array_name}[@]-}\")"
-  for line in "${items[@]}"; do
+  for line in "${arr[@]}"; do
     if [[ -n "${line}" ]]; then
       printf '%s\n' "${line}"
     fi
