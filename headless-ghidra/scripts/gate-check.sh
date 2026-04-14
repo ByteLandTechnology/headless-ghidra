@@ -108,6 +108,25 @@ yaml_array_all_have_fields() {
   echo "pass"
 }
 
+yaml_object_fields_nonempty() {
+  local file="$1"
+  shift
+  local fields=("$@")
+  if ! command -v yq &>/dev/null || [[ ! -f "$file" ]]; then
+    echo "fail"
+    return
+  fi
+  for field in "${fields[@]}"; do
+    local val
+    val=$(yq -r "$field // \"\"" "$file" 2>/dev/null || echo "")
+    [[ -n "$val" && "$val" != "null" ]] || {
+      echo "fail"
+      return
+    }
+  done
+  echo "pass"
+}
+
 yaml_no_duplicate_values() {
   local file="$1" array_path="$2" field="$3"
   if ! command -v yq &>/dev/null; then
@@ -235,9 +254,19 @@ case "$GATE" in
     [[ -n "$has_c" ]] && r="pass" || r="fail"
     check P5_01 "decompiled-output/ contains .c file" blocking "$r"
     check P5_02 "decompilation-record.yaml exists" blocking "$(file_exists "$fn_dir/decompilation-record.yaml")"
-    check P5_03 "decompilation-record has all required fields" blocking "$(yaml_array_all_have_fields "$fn_dir/decompilation-record.yaml" '.' function_id function_name address decompiled_source)"
-    check P5_04 "semantic-record.yaml exists" blocking "$(file_exists "$fn_dir/semantic-record.yaml")"
-    check P5_05 "role/name/prototype evidence has >= 2 items" blocking "$(
+    check P5_03 "decompilation-record has all required fields" blocking "$(yaml_object_fields_nonempty "$fn_dir/decompilation-record.yaml" '.function_id' '.function_name' '.address' '.decompiled_source' '.decompilation_backend' '.decompilation_action')"
+
+    backend_status="$(yaml_field_equals "$fn_dir/decompilation-record.yaml" '.decompilation_backend' 'ghidra_headless')"
+    action_status="$(yaml_field_equals "$fn_dir/decompilation-record.yaml" '.decompilation_action' 'decompile-selected')"
+    if [[ "$backend_status" == "pass" && "$action_status" == "pass" ]]; then
+      r="pass"
+    else
+      r="fail"
+    fi
+    check P5_04 "decompilation provenance is ghidra_headless via decompile-selected" blocking "$r"
+
+    check P5_05 "semantic-record.yaml exists" blocking "$(file_exists "$fn_dir/semantic-record.yaml")"
+    check P5_06 "role/name/prototype evidence has >= 2 items" blocking "$(
       if command -v yq &>/dev/null && [[ -f "$fn_dir/semantic-record.yaml" ]]; then
         role=$(yq -r '.role_evidence // [] | length' "$fn_dir/semantic-record.yaml" 2>/dev/null || echo "0")
         name=$(yq -r '.name_evidence // [] | length' "$fn_dir/semantic-record.yaml" 2>/dev/null || echo "0")
@@ -248,9 +277,9 @@ case "$GATE" in
         echo "fail"
       fi
     )"
-    check P5_06 "source-comparison.yaml exists" blocking "$(file_exists "$fn_dir/source-comparison.yaml")"
-    check P5_07 "reference_status is set" blocking "$(yaml_field_nonempty "$fn_dir/source-comparison.yaml" '.reference_status')"
-    check P5_08 "verify-report has no failed entries" blocking "$(
+    check P5_07 "source-comparison.yaml exists" blocking "$(file_exists "$fn_dir/source-comparison.yaml")"
+    check P5_08 "reference_status is set" blocking "$(yaml_field_nonempty "$fn_dir/source-comparison.yaml" '.reference_status')"
+    check P5_09 "verify-report has no failed entries" blocking "$(
       if [[ -f "$fn_dir/verify-report.yaml" ]] && command -v yq &>/dev/null; then
         failed=$(yq -r '.results // [] | map(select(.status == "failed")) | length' "$fn_dir/verify-report.yaml" 2>/dev/null || echo "1")
         [[ "$failed" -eq 0 ]] && echo "pass" || echo "fail"
@@ -273,8 +302,8 @@ case "$GATE" in
     else
       r="fail"
     fi
-    check P5_09 "reconstruction project .c + .h written" blocking "$r"
-    check P5_10 "reconstruction-manifest.yaml updated" blocking "$(file_exists "$recon_root/reconstruction-manifest.yaml")"
+    check P5_10 "reconstruction project .c + .h written" blocking "$r"
+    check P5_11 "reconstruction-manifest.yaml updated" blocking "$(file_exists "$recon_root/reconstruction-manifest.yaml")"
     ;;
 
   P6)
@@ -298,6 +327,19 @@ case "$GATE" in
 esac
 
 # Output JSON
-checks_json=$(printf '%s,' "${checks[@]}" | sed 's/,$//')
-echo "{\"gate\":\"$GATE\",\"exit_code\":$exit_code,\"checks\":[$checks_json],\"failures\":[$(printf '\"%s\",' "${failures[@]}" | sed 's/,$//')],\"warnings\":[$(printf '\"%s\",' "${warnings[@]}" | sed 's/,$//')]}"
+checks_json=""
+failures_json=""
+warnings_json=""
+
+if [[ ${#checks[@]} -gt 0 ]]; then
+  checks_json=$(printf '%s,' "${checks[@]}" | sed 's/,$//')
+fi
+if [[ ${#failures[@]} -gt 0 ]]; then
+  failures_json=$(printf '\"%s\",' "${failures[@]}" | sed 's/,$//')
+fi
+if [[ ${#warnings[@]} -gt 0 ]]; then
+  warnings_json=$(printf '\"%s\",' "${warnings[@]}" | sed 's/,$//')
+fi
+
+echo "{\"gate\":\"$GATE\",\"exit_code\":$exit_code,\"checks\":[$checks_json],\"failures\":[$failures_json],\"warnings\":[$warnings_json]}"
 exit $exit_code

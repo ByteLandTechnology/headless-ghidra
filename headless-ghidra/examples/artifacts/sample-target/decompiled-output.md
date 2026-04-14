@@ -6,6 +6,7 @@
 - Validated now:
   - this artifact is explicitly blocked during `Baseline Evidence`
   - the required selected-function and compare-trace fields are defined
+  - the companion decompilation record must declare Ghidra-only provenance
 - Pending local verification:
   - any actual decompiled body
   - any selected-function export for `sample-target`
@@ -67,6 +68,11 @@
 - Do not batch-export exploratory decompilation.
 - Do not mark a step complete unless the matching compare case has been
   recorded in `comparison-command-log.md`.
+- The companion `decompilation-record.yaml` must declare
+  `decompilation_backend: ghidra_headless` and
+  `decompilation_action: decompile-selected`.
+- Reject entries derived from `objdump`, `otool`, `llvm-objdump`, `nm`,
+  `readelf`, `gdb`, `lldb`, `radare2`, or other non-Ghidra disassembly tools.
 - Keep function order aligned with the outside-in traversal queue in
   `reconstruction-log.md`.
 

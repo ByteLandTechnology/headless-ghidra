@@ -483,6 +483,13 @@ Decompile only after role, candidate name, and candidate prototype evidence
 exist. A step is not complete until the reconstructed boundary is runnable
 against the original target.
 
+Selected Decompilation is Ghidra-only in this repository. Run it through
+`run-headless-analysis.sh --action decompile-selected`, which invokes the
+registered Java Ghidra scripts and Ghidra's decompiler API. Direct shell
+disassembly or decompilation via `objdump`, `otool`, `llvm-objdump`, `nm`,
+`readelf`, `gdb`, `lldb`, or `radare2` is unsupported and must be treated as a
+blocked step, not an alternate backend.
+
 Outside-in rule:
 
 1. Decompile the selected outer-layer function first.
@@ -524,6 +531,12 @@ Each decompiled entry must cite:
 - `confidence`
 - `open_questions`
 
+The companion `iterations/<NNN>/functions/<fn_id>/decompilation-record.yaml`
+must also record:
+
+- `decompilation_backend: ghidra_headless`
+- `decompilation_action: decompile-selected`
+
 The exact build, run, and diff commands for the step belong in
 `comparison-command-log.md`.
 
@@ -561,6 +574,14 @@ An analyst decompiles the outer-layer function but leaves its unknown callees
 pointing at placeholders.
 Correct response: block the step until those callees are routed back into the
 original binary or original library and the runnable compare is recorded.
+```
+
+```text
+An analyst runs objdump against the target and pastes the assembly-derived code
+into decompiled-output/.
+Correct response: reject the artifact, rerun Selected Decompilation through
+run-headless-analysis.sh, and require decompilation-record.yaml to declare
+ghidra_headless provenance before P5 can pass.
 ```
 
 ## Runtime Output Failure Example

@@ -36,7 +36,7 @@ P0 Intake → P1 Baseline → P2 Evidence → [P3 Discovery → P4+P5 Decompile 
 | [`headless-ghidra-baseline`](./headless-ghidra-baseline/) | P1 | Ghidra headless baseline export (6 YAMLs) | 1 |
 | [`headless-ghidra-evidence`](./headless-ghidra-evidence/) | P2 | 4-dimension review + library ID + synthesis + Frida | 4–6 (parallel) |
 | [`headless-ghidra-discovery`](./headless-ghidra-discovery/) | P3 | Frontier batch discovery | 1/round |
-| [`headless-ghidra-batch-decompile`](./headless-ghidra-batch-decompile/) | P4+P5 | Source comparison → semantic rebuild → decompile | N/round (fn-parallel) |
+| [`headless-ghidra-batch-decompile`](./headless-ghidra-batch-decompile/) | P4+P5 | Source comparison → semantic rebuild → Ghidra-only decompile | N/round (fn-parallel) |
 | [`headless-ghidra-frida-verify`](./headless-ghidra-frida-verify/) | P6 | Frida I/O recording → comparison → gate verdict | N/round (fn-parallel) |
 
 ## Core Constraints
@@ -44,6 +44,7 @@ P0 Intake → P1 Baseline → P2 Evidence → [P3 Discovery → P4+P5 Decompile 
 - **Headless-only workflows**. GUI operations are out of scope.
 - **Evidence-driven**. All decisions reference observable evidence.
 - **Reproducible**. Commands, inputs, and expected results are explicitly replayable.
+- **Ghidra-only decompilation**. Selected Decompilation must run through `run-headless-analysis.sh --action decompile-selected` and the Java Ghidra scripts; external shell disassembly or decompilation tools do not satisfy the workflow.
 - **All-YAML artifacts**. All artifacts are in YAML format (except code).
 - **Gate-checked**. Every phase transition is validated by `gate-check.sh`.
 

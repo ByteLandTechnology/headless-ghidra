@@ -10,6 +10,8 @@
     source-comparison preparation, semantic reconstruction, selected
     decompilation planning, and incremental compare recording
   - the active export/apply/verify support surface is Java-only
+  - selected decompilation is Ghidra-only and must use
+    `run-headless-analysis.sh --action decompile-selected`
   - baseline and selected decompilation are separate actions
   - exact original-versus-hybrid compare commands now have a tracked review
     surface even though no generic wrapper action exists yet
@@ -469,6 +471,13 @@ Do not run this stage until role, candidate name, and candidate prototype
 evidence has been recorded for each selected function and the current step has
 a reviewed compare boundary.
 
+Selected Decompilation has exactly one supported backend in this repository:
+`run-headless-analysis.sh --action decompile-selected`, which routes through
+the Java Ghidra scripts and Ghidra's decompiler API. Direct shell disassembly
+or alternate decompilation tooling such as `objdump`, `otool`,
+`llvm-objdump`, `nm`, `readelf`, `gdb`, `lldb`, and `radare2` is out of policy
+and does not satisfy P5.
+
 ### Plan the decompilation pass
 
 ```bash
@@ -497,6 +506,12 @@ bash "$SKILL_ROOT/scripts/run-headless-analysis.sh" \
   --selected-function inner_fn@00101890
 ```
 
+The matching `iterations/<NNN>/functions/<fn_id>/decompilation-record.yaml`
+must declare:
+
+- `decompilation_backend: ghidra_headless`
+- `decompilation_action: decompile-selected`
+
 ### Record the compare boundary
 
 Copy the tracked template before the first runnable compare for this target:
@@ -510,6 +525,8 @@ The repository does not ship any
 `run-headless-analysis.sh --action compare-selected` wrapper today. Record the
 exact target-specific build and run commands in `comparison-command-log.md`
 instead of assuming a built-in action exists.
+Those compare/build commands validate the recovered boundary later; they are
+not a substitute for the required Ghidra decompilation export.
 
 ### Executable targets: interpose one boundary at a time
 
@@ -578,6 +595,8 @@ Review these failure paths explicitly:
 5. invalid rename-plan or runtime output path under the installed skill package
 6. hybrid compare step leaves unresolved callees pointing at placeholders
    instead of the original target
+7. external shell disassembly output presented as if it were the selected
+   decompilation artifact
 
 ## Notes
 
@@ -589,6 +608,8 @@ Review these failure paths explicitly:
 - Local runtime validation is recorded in `latest-version-validation.md`.
 - `comparison-command-log.md` is the required reproducibility surface for
   target-specific compare commands until a generic wrapper exists.
+- `decompilation-record.yaml` must record `decompilation_backend:
+  ghidra_headless` and `decompilation_action: decompile-selected`.
 - Run actions for the same `target-id` sequentially. Parallel headless runs can
   fail with a Ghidra project lock before the Java scripts begin.
 - The sample replay surface remains useful because it defines the exact command

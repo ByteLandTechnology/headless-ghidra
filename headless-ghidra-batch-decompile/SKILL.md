@@ -1,6 +1,6 @@
 ---
 name: "headless-ghidra-batch-decompile"
-description: "P4+P5 sub-skill: function-level parallel source comparison, semantic reconstruction, and Ghidra decompilation. Analysis phases run in parallel; Ghidra operations are serialized via a queue."
+description: "P4+P5 sub-skill: function-level parallel source comparison, semantic reconstruction, and Ghidra-only decompilation. Analysis phases run in parallel; Ghidra operations are serialized via a queue."
 phase: "P4+P5"
 ---
 
@@ -10,6 +10,11 @@ This skill executes the full decompilation pipeline for each function in a batch
 source comparison → semantic reconstruction → decompilation. Analysis phases
 run in parallel at the function level; Ghidra read/write operations are
 serialized through a queue.
+
+Selected Decompilation has exactly one supported backend in this repository:
+`scripts/run-headless-analysis.sh --action decompile-selected`, which invokes
+the registered Java Ghidra scripts and Ghidra's decompiler API. Direct shell
+disassembly or alternate decompilation tooling is out of policy.
 
 ## Entry / Exit Gates
 
@@ -45,7 +50,8 @@ serialized through a queue.
 - `apply-report.yaml`
 - `verify-report.yaml`
 - `lint-report.yaml`
-- `decompilation-record.yaml`
+- `decompilation-record.yaml` (`decompilation_backend` and
+  `decompilation_action` are required)
 - `decompiled-output/` directory
 
 **Also written to reconstruction project**:
@@ -70,11 +76,13 @@ Phase B — Ghidra Operations (requires lock, queued execution)
   7. Apply Signatures
   8. Verify Signatures → verify-report.yaml
   9. Lint → lint-report.yaml
-  10. Decompile selected function → decompiled-output/
+  10. Run `run-headless-analysis.sh --action decompile-selected` for the
+      selected function → decompiled-output/
   11. ghidra-queue.sh release
 
 Phase C — Post-processing (no lock needed)
-  12. Write decompilation-record.yaml
+  12. Write decompilation-record.yaml with `decompilation_backend:
+      ghidra_headless` and `decompilation_action: decompile-selected`
   13. Write cleaned source to reconstruction project
   14. Update reconstruction-manifest.yaml
 ```
@@ -104,11 +112,14 @@ Phase C — Post-processing (no lock needed)
 - ⛔ Must not modify `baseline/` or `evidence/` files
 - ⛔ Must not force changes when role/name/prototype evidence is all weak
 - ⛔ Must not execute Frida (verification is P6's responsibility)
+- ⛔ Must not use `objdump`, `otool`, `llvm-objdump`, `nm`, `readelf`, `gdb`, `lldb`, `radare2`, or equivalent direct binary disassembly tooling to produce or justify `decompiled-output/`
+- ⛔ Must not treat compare, trace, or symbol-dump commands as an alternate decompilation backend
 - ⛔ **Python / Jython scripts are strictly forbidden**. If you need custom Ghidra scripts, write them in Java. The file name MUST strictly match the public class name (e.g. `CustomAnalysis.java` -> `public class CustomAnalysis extends GhidraScript`).
 
 **Termination conditions**:
 - All Phase A-C output files generated
-- `decompilation-record.yaml` has all required fields non-empty
+- `decompilation-record.yaml` has all required fields non-empty, including
+  Ghidra provenance
 - Reconstruction project `.c` + `.h` files written
 - Ghidra lock released
 
@@ -132,6 +143,11 @@ Key constraints:
 - Role/name/prototype evidence must have at least 2 items available before
   allowing changes
 - You do not perform Frida verification (that is P6's responsibility)
+- Selected Decompilation must come from `run-headless-analysis.sh --action
+  decompile-selected`; do not use `objdump`, `otool`, `llvm-objdump`, `nm`,
+  `readelf`, `gdb`, `lldb`, or `radare2` as substitute backends
+- `decompilation-record.yaml` must include `decompilation_backend:
+  ghidra_headless` and `decompilation_action: decompile-selected`
 - CRITICAL SCRIPTING RULE: If you must write a new script, DO NOT write Python (`.py`). You MUST write Java (`.java`) and ensure the file name matches the public class name to avoid `ClassNotFoundException`.
 ```
 
@@ -141,14 +157,15 @@ Key constraints:
 |---|---|---|
 | P5_01 | `decompiled-output/` contains `.c` file | blocking |
 | P5_02 | `decompilation-record.yaml` exists | blocking |
-| P5_03 | Record contains all required fields, non-empty | blocking |
-| P5_04 | `semantic-record.yaml` exists | blocking |
-| P5_05 | Role/name/prototype evidence has at least 2 items non-empty | blocking |
-| P5_06 | `source-comparison.yaml` exists | blocking |
-| P5_07 | `reference_status` is set | blocking |
-| P5_08 | verify-report has no `failed` entries | blocking |
-| P5_09 | Reconstruction project `.c` + `.h` written | blocking |
-| P5_10 | `reconstruction-manifest.yaml` updated | blocking |
+| P5_03 | Record contains all required fields, including provenance fields | blocking |
+| P5_04 | Provenance declares `ghidra_headless` via `decompile-selected` | blocking |
+| P5_05 | `semantic-record.yaml` exists | blocking |
+| P5_06 | Role/name/prototype evidence has at least 2 items non-empty | blocking |
+| P5_07 | `source-comparison.yaml` exists | blocking |
+| P5_08 | `reference_status` is set | blocking |
+| P5_09 | verify-report has no `failed` entries | blocking |
+| P5_10 | Reconstruction project `.c` + `.h` written | blocking |
+| P5_11 | `reconstruction-manifest.yaml` updated | blocking |
 
 ## Next Step Routing
 

@@ -65,6 +65,10 @@ Notes:
   - Skill package paths are resolved from the script's own location.
   - This wrapper is headless-only and intentionally avoids GUI fallback.
   - Baseline Evidence and Selected Decompilation are separate actions.
+  - Selected Decompilation is Ghidra-only. Use `--action decompile-selected`;
+    external disassembly or decompilation tools such as `objdump`, `otool`,
+    `llvm-objdump`, `nm`, `readelf`, `gdb`, `lldb`, and `radare2` are
+    unsupported and do not satisfy pipeline gates.
   - Runtime Java prefers GHIDRA_JAVA_HOME, then the recorded Ghidra JDK,
     then JAVA_HOME, then java on PATH.
   - Runtime artifacts default to <workspace-root>/.work/ghidra-artifacts/<target-id>/.
@@ -108,6 +112,10 @@ EOF
 fail_missing_selected_functions() {
   cat <<'EOF' >&2
 Selected Decompilation requires at least one --selected-function VALUE.
+
+This stage must run through run-headless-analysis.sh and Ghidra Headless.
+External disassembly output from tools such as objdump or otool is not an
+accepted substitute for `--action decompile-selected`.
 
 Record the function selection first, then rerun, for example:
   bash <skill-root>/scripts/run-headless-analysis.sh \

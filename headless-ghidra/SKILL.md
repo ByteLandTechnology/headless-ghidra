@@ -105,6 +105,11 @@ scripts/gate-check.sh --gate P6 --artifact-root <path> --iteration 001 --functio
 
 Return codes: `0` = pass, `1` = fail (blocking), `2` = warn (conditional)
 
+For P5, a generated `.c` file alone is not enough. The gate must also confirm
+that `decompilation-record.yaml` records Ghidra provenance with
+`decompilation_backend: ghidra_headless` and
+`decompilation_action: decompile-selected`.
+
 ## User Interaction
 
 The orchestrator uses dialogs for user interaction in these scenarios:
@@ -136,6 +141,8 @@ The orchestrator uses dialogs for user interaction in these scenarios:
 - ⛔ **Must not execute any Frida commands**
 - ⛔ **Must not write reconstruction code**
 - ⛔ **Must not modify any artifacts under `baseline/`, `evidence/`, `iterations/` directly via shell (use YAML tools or state updates)**
+- ⛔ **Must not accept external disassembly or decompilation as a substitute for Ghidra**. Commands such as `objdump`, `otool`, `llvm-objdump`, `nm`, `readelf`, `gdb`, `lldb`, and `radare2` may not be used to generate or justify `decompiled-output/` for P5.
+- ⛔ **Must halt or reject a worker plan that bypasses `run-headless-analysis.sh --action decompile-selected` for Selected Decompilation**
 
 ## Orchestration Pseudocode
 
@@ -236,3 +243,4 @@ Reconstruction project lives at `.work/reconstruction/<target-id>/`.
 - **Evidence-driven**. All decisions must reference observable evidence.
 - **Reproducible**. Commands, inputs, and expected results must be explicitly replayable.
 - **Auditable**. All artifacts are YAML or inspectable Markdown/C source.
+- **Ghidra-only decompilation**. Selected Decompilation has exactly one supported backend: Ghidra headless through the registered Java scripts and wrapper action.
