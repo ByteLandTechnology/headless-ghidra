@@ -11,7 +11,7 @@ headless-ghidra                       ← global orchestrator
 ├── headless-ghidra-intake            ← P0 target intake
 ├── headless-ghidra-baseline          ← P1 baseline extraction
 ├── headless-ghidra-evidence          ← P2 evidence review (incl. library identification)
-├── headless-ghidra-discovery         ← P3 batch discovery
+├── headless-ghidra-discovery         ← P3 target selection
 ├── headless-ghidra-batch-decompile   ← P4+P5 batch decompilation
 └── headless-ghidra-frida-verify      ← P6 Frida I/O verification
 ```
@@ -33,9 +33,9 @@ P0 Intake → P1 Baseline → P2 Evidence → [P3 Discovery → P4+P5 Decompile 
 |---|---|---|---|
 | [`headless-ghidra`](./headless-ghidra/) | Orchestrator | Read state, dispatch sub-agents, run gates, show dialogs | 1 |
 | [`headless-ghidra-intake`](./headless-ghidra-intake/) | P0 | Target identity, workspace, Ghidra discovery | 2 (parallel) |
-| [`headless-ghidra-baseline`](./headless-ghidra-baseline/) | P1 | Ghidra headless baseline export (6 YAMLs) | 1 |
-| [`headless-ghidra-evidence`](./headless-ghidra-evidence/) | P2 | 4-dimension review + library ID + synthesis + Frida | 4–6 (parallel) |
-| [`headless-ghidra-discovery`](./headless-ghidra-discovery/) | P3 | Frontier batch discovery | 1/round |
+| [`headless-ghidra-baseline`](./headless-ghidra-baseline/) | P1 | Ghidra headless baseline Markdown export with a blocked decompilation placeholder | 1 |
+| [`headless-ghidra-evidence`](./headless-ghidra-evidence/) | P2 | Frontier evidence review into `evidence-candidates.md` plus optional Frida | 4–6 (parallel) |
+| [`headless-ghidra-discovery`](./headless-ghidra-discovery/) | P3 | Automatic default target selection into `target-selection.md` | 1/round |
 | [`headless-ghidra-batch-decompile`](./headless-ghidra-batch-decompile/) | P4+P5 | Source comparison → semantic rebuild → Ghidra-only decompile | N/round (fn-parallel) |
 | [`headless-ghidra-frida-verify`](./headless-ghidra-frida-verify/) | P6 | Frida I/O recording → comparison → gate verdict | N/round (fn-parallel) |
 
@@ -45,7 +45,9 @@ P0 Intake → P1 Baseline → P2 Evidence → [P3 Discovery → P4+P5 Decompile 
 - **Evidence-driven**. All decisions reference observable evidence.
 - **Reproducible**. Commands, inputs, and expected results are explicitly replayable.
 - **Ghidra-only decompilation**. Selected Decompilation must run through `run-headless-analysis.sh --action decompile-selected` and the Java Ghidra scripts; external shell disassembly or decompilation tools do not satisfy the workflow.
-- **All-YAML artifacts**. All artifacts are in YAML format (except code).
+- **Mixed tracked artifacts**. Runtime surfaces currently use Markdown for
+  the validated P1–P3 exports and YAML for pipeline state, reconstruction
+  manifests, and later per-function records.
 - **Gate-checked**. Every phase transition is validated by `gate-check.sh`.
 
 ## Artifact Path Conventions
@@ -54,9 +56,15 @@ P0 Intake → P1 Baseline → P2 Evidence → [P3 Discovery → P4+P5 Decompile 
 .work/
 ├── ghidra-artifacts/<target-id>/          ← analysis artifacts
 │   ├── pipeline-state.yaml               ← single source of truth
-│   ├── intake/                           ← P0 artifacts
-│   ├── baseline/                         ← P1 artifacts (6 YAML files)
-│   ├── evidence/                         ← P2 artifacts
+│   ├── intake/                           ← P0 YAML artifacts
+│   ├── function-names.md                ← P1 baseline surface
+│   ├── imports-and-libraries.md         ← P1 baseline surface
+│   ├── strings-and-constants.md         ← P1 baseline surface
+│   ├── types-and-structs.md             ← P1 baseline surface
+│   ├── xrefs-and-callgraph.md           ← P1 baseline surface
+│   ├── decompiled-output.md             ← P1 blocked placeholder
+│   ├── evidence-candidates.md           ← P2 review surface
+│   ├── target-selection.md              ← P3 selection surface
 │   └── iterations/<NNN>/                 ← P3–P6 iteration artifacts
 │       └── functions/<fn_id>/            ← per-function artifacts
 ├── ghidra-projects/<target-id>/          ← Ghidra project (single instance)

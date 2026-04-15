@@ -46,6 +46,15 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+  add_compile_options(
+    -Wno-error=implicit-function-declaration
+    -Wno-int-conversion
+    -Wno-incompatible-pointer-types
+    -Wno-pointer-sign
+  )
+endif()
+
 # Debug by default for reconstruction
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
@@ -55,8 +64,8 @@ endif()
 include_directories(include)
 
 # Collect sources
-file(GLOB RECON_SOURCES "src/*.c")
-file(GLOB STUB_SOURCES "stubs/*.c")
+file(GLOB RECON_SOURCES CONFIGURE_DEPENDS "src/*.c")
+file(GLOB STUB_SOURCES CONFIGURE_DEPENDS "stubs/*.c")
 
 # Main reconstruction library
 add_library(reconstruction STATIC \${RECON_SOURCES} \${STUB_SOURCES})
@@ -84,10 +93,23 @@ cat > "$RECON_ROOT/include/common/types.h" <<'EOF'
 #ifndef COMMON_TYPES_H
 #define COMMON_TYPES_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <sys/types.h>
 
-/* Types will be populated by the baseline export phase. */
+/* Baseline exported types will extend these common Ghidra aliases. */
+typedef uint8_t byte;
+typedef uint8_t undefined;
+typedef uint8_t undefined1;
+typedef uint16_t undefined2;
+typedef uint32_t undefined4;
+typedef uint64_t undefined8;
+typedef unsigned short ushort;
+typedef unsigned int uint;
+typedef unsigned long ulong;
+typedef int BOOL;
 
 #endif /* COMMON_TYPES_H */
 EOF
@@ -147,7 +169,8 @@ EOF
 
 # Create third-party manifest
 cat > "$RECON_ROOT/third_party/third-party-manifest.yaml" <<EOF
-# Third-party library manifest — populated from P2 library-identification.yaml
+# Third-party library manifest — populated from P2 reviewed library notes
+# in evidence-candidates.md, or from legacy library-identification.yaml replays
 libraries: []
 EOF
 

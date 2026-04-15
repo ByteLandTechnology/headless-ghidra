@@ -20,7 +20,7 @@ disassembly or alternate decompilation tooling is out of policy.
 
 | Property | Value |
 |---|---|
-| **Entry gate** | `gate-check.sh --gate P3 --iteration <NNN>` passes |
+| **Entry gate** | Current runtime: `gate-check.sh --gate P3`; legacy fallback: `gate-check.sh --gate P3 --iteration <NNN>` |
 | **Exit gate** | Per function: `gate-check.sh --gate P5 --iteration <NNN> --function <fn_id>` |
 | **Parallelism** | ✅ Function-level parallel (analysis parallel, Ghidra operations queued) |
 
@@ -36,9 +36,14 @@ disassembly or alternate decompilation tooling is out of policy.
 | **Role** | Execute full P4 source comparison + P5 semantic reconstruction + decompilation for a single function |
 
 **Inputs**:
-- This function's entry from `iterations/<NNN>/batch-manifest.yaml`
-- All `baseline/` files
-- `evidence/` anchor info (including `derived_from_library` tags)
+- Current runtime: the reviewed selected row from `target-selection.md`
+- Legacy fallback only: this function's entry from `iterations/<NNN>/batch-manifest.yaml`
+- Root-level baseline Markdown surfaces:
+  `function-names.md`, `imports-and-libraries.md`,
+  `strings-and-constants.md`, `types-and-structs.md`,
+  `xrefs-and-callgraph.md`, and the blocked `decompiled-output.md` placeholder
+- Reviewed frontier evidence from `evidence-candidates.md`, including any
+  library-derived tags carried into the current selection decision
 - Ghidra lock path (`ghidra_queue.lock_file`)
 - (if library match) `third_party/<library_name>/` source code
 
@@ -64,7 +69,8 @@ disassembly or alternate decompilation tooling is out of policy.
 
 ```
 Phase A — Analysis (no Ghidra lock needed, parallelizable)
-  1. Review baseline evidence, perform source comparison → source-comparison.yaml
+  1. Review the root-level baseline Markdown evidence and current frontier
+     review, perform source comparison → source-comparison.yaml
      If function has derived_from_library tag: prioritize comparing against library source
   2. Analyze role/name/prototype evidence → semantic-record.yaml
   3. Write renaming-log.yaml + signature-log.yaml
@@ -109,7 +115,7 @@ Phase C — Post-processing (no lock needed)
 **Strict prohibitions**:
 - ⛔ Must not execute Ghidra operations without acquiring the lock first
 - ⛔ Must not modify other functions' artifact directories
-- ⛔ Must not modify `baseline/` or `evidence/` files
+- ⛔ Must not modify the root-level baseline or evidence review exports
 - ⛔ Must not force changes when role/name/prototype evidence is all weak
 - ⛔ Must not execute Frida (verification is P6's responsibility)
 - ⛔ Must not use `objdump`, `otool`, `llvm-objdump`, `nm`, `readelf`, `gdb`, `lldb`, `radare2`, or equivalent direct binary disassembly tooling to produce or justify `decompiled-output/`

@@ -1,13 +1,14 @@
 ---
 name: "headless-ghidra-baseline"
-description: "P1 sub-skill: run Ghidra headless auto-analysis and export all baseline evidence as YAML files. Strictly forbidden from decompiling function bodies."
+description: "P1 sub-skill: run Ghidra headless auto-analysis and export the validated baseline Markdown runtime surfaces. Strictly forbidden from decompiling function bodies."
 phase: "P1"
 ---
 
 # Headless Ghidra Baseline — P1 Baseline Extraction
 
-This skill runs Ghidra headless auto-analysis and exports all baseline evidence
-as YAML files. It is **strictly forbidden** from decompiling function bodies,
+This skill runs Ghidra headless auto-analysis and exports the validated
+baseline Markdown runtime surfaces. It is **strictly forbidden** from
+decompiling function bodies,
 performing semantic renames, or restoring prototypes.
 
 ## Entry / Exit Gates
@@ -34,13 +35,15 @@ performing semantic renames, or restoring prototypes.
 - `intake/ghidra-discovery.yaml` (analyzeHeadless path)
 
 **Outputs**:
-- `baseline/function-names.yaml`
-- `baseline/imports-and-libraries.yaml`
-- `baseline/strings-and-constants.yaml`
-- `baseline/types-and-structs.yaml`
-- `baseline/xrefs-and-callgraph.yaml`
-- `baseline/decompiled-output.yaml` (empty placeholder: `functions: []`)
-- (optional) `baseline/call-graph-detail.yaml`
+- `function-names.md`
+- `imports-and-libraries.md`
+- `strings-and-constants.md`
+- `types-and-structs.md`
+- `xrefs-and-callgraph.md`
+- `decompiled-output.md` (blocked placeholder; function bodies remain unavailable at P1)
+- `renaming-log.md`
+- `signature-log.md`
+- (optional) `call-graph-detail.md`
 
 **Available tools**:
 - `scripts/run-headless-analysis.sh --action baseline`
@@ -49,16 +52,16 @@ performing semantic renames, or restoring prototypes.
 - `ghidra-scripts/ExportCallGraph.java`
 
 **Strict prohibitions**:
-- ⛔ **Must not decompile any function body** (`decompiled-output.yaml` must remain empty)
+- ⛔ **Must not decompile any function body** (`decompiled-output.md` must retain the blocked placeholder text)
 - ⛔ Must not modify function names, types, or prototypes
 - ⛔ Must not execute Apply Renames/Signatures
 - ⛔ Must not modify any files under `intake/`
 - ⛔ **Python / Jython scripts are strictly forbidden**. If you need custom Ghidra scripts, write them in Java. The file name MUST strictly match the public class name (e.g. `CustomAnalysis.java` -> `public class CustomAnalysis extends GhidraScript`).
 
 **Termination conditions**:
-- All 6 YAML files under `baseline/` generated
-- `decompiled-output.yaml` has `functions` array length of 0
-- All YAML files are parseable by `yq`
+- The required Markdown baseline files are generated under the artifact root
+- `decompiled-output.md` still states that decompiled bodies are intentionally blocked in this stage
+- All exported Markdown surfaces are reviewable and non-empty
 
 **System prompt**:
 
@@ -66,8 +69,8 @@ performing semantic renames, or restoring prototypes.
 You are the P1 baseline export agent. Your responsibilities:
 1. Read target-identity.yaml and ghidra-discovery.yaml
 2. Run run-headless-analysis.sh --action baseline
-3. Confirm all 6 baseline YAML files are generated
-4. Confirm decompiled-output.yaml is an empty placeholder
+3. Confirm the baseline Markdown files are generated
+4. Confirm decompiled-output.md remains a blocked placeholder
 
 You are strictly forbidden from decompiling function bodies, renaming, or
 modifying any metadata at this stage. Those operations belong to later phases.
@@ -80,44 +83,35 @@ If you need to write a custom Ghidra script:
 3. The file name and public class name MUST perfectly match to prevent `ClassNotFoundException`.
 ```
 
-## Baseline Artifact Formats
+## Baseline Artifact Manifest
 
-### `baseline/function-names.yaml`
-
-```yaml
-exported_at: "2026-04-09T10:10:00Z"
-total_count: 42
-functions:
-  - address: "0x00102140"
-    name: "FUN_00102140"
-    type: "auto_generated"    # auto_generated | imported | user_defined
-    entry_point: false
-    size_bytes: 256
-```
-
-### Full Baseline File Manifest
+Current validated runtime exports write these Markdown files under the artifact
+root. Older `baseline/*.md` layouts may still appear in legacy replays, but new
+automation should use the root-level files below.
 
 | File | Contents |
 |---|---|
-| `function-names.yaml` | Function names/labels/addresses |
-| `imports-and-libraries.yaml` | Import symbols and external libraries |
-| `strings-and-constants.yaml` | Strings and constant values |
-| `types-and-structs.yaml` | Types, structs, enums |
-| `xrefs-and-callgraph.yaml` | Cross-references and call relationships |
-| `decompiled-output.yaml` | Empty placeholder (`functions: []`) |
+| `function-names.md` | Function names/labels/addresses |
+| `imports-and-libraries.md` | Import symbols and external libraries |
+| `strings-and-constants.md` | Strings and constant values |
+| `types-and-structs.md` | Types, structs, enums |
+| `xrefs-and-callgraph.md` | Cross-references and call relationships |
+| `decompiled-output.md` | Blocked placeholder noting that bodies stay unavailable in P1 |
+| `renaming-log.md` | Rename plan surface; should remain review-only at this stage |
+| `signature-log.md` | Signature plan surface; should remain review-only at this stage |
 
 ## Gate Check Matrix (P1)
 
 | ID | Check | Type |
 |---|---|---|
-| P1_01 | `baseline/function-names.yaml` exists | blocking |
-| P1_02 | `baseline/imports-and-libraries.yaml` exists | blocking |
-| P1_03 | `baseline/strings-and-constants.yaml` exists | blocking |
-| P1_04 | `baseline/types-and-structs.yaml` exists | blocking |
-| P1_05 | `baseline/xrefs-and-callgraph.yaml` exists | blocking |
-| P1_06 | `baseline/decompiled-output.yaml` exists with empty `functions` | blocking |
-| P1_07 | All baseline files are YAML-parseable | blocking |
-| P1_08 | function-names has at least 1 function | warning |
+| P1_01 | `function-names.md` exists | blocking |
+| P1_02 | `imports-and-libraries.md` exists | blocking |
+| P1_03 | `strings-and-constants.md` exists | blocking |
+| P1_04 | `types-and-structs.md` exists | blocking |
+| P1_05 | `xrefs-and-callgraph.md` exists | blocking |
+| P1_06 | `decompiled-output.md` retains the blocked placeholder text | blocking |
+| P1_07 | Required baseline Markdown files are non-empty | blocking |
+| P1_08 | function-names has at least 1 function row | warning |
 
 ## Next Step Routing
 

@@ -10,3 +10,5 @@ build/
 dist/
 node_modules/
 .work/
+__pycache__/
+*.py[cod]

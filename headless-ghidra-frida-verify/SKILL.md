@@ -1,12 +1,12 @@
 ---
 name: "headless-ghidra-frida-verify"
-description: "P6 sub-skill: function-level parallel Frida I/O verification. Records original function behavior, executes reconstructed function, and compares I/O. Results serve as the pipeline gate."
+description: "P6 sub-skill: function-level parallel Frida I/O verification. Records reviewed runtime behavior, executes reconstructed function, and compares I/O. Results serve as the pipeline gate."
 phase: "P6"
 ---
 
 # Headless Ghidra Frida Verify — P6 Frida I/O Verification
 
-This skill hooks the original function via Frida to record I/O, then executes
+This skill hooks the selected verification function via Frida to record I/O, then executes
 the reconstructed function with the same inputs and compares outputs case by
 case. Verification results are the sole basis for the gate decision.
 
@@ -22,7 +22,7 @@ case. Verification results are the sole basis for the gate decision.
 
 | Source | Method | Artifact | Priority |
 |---|---|---|---|
-| Runtime recording | Frida hook on original function, record real I/O | `test-inputs/runtime-recorded.yaml` | Highest |
+| Runtime recording | Frida hook on the verification binary, record real I/O | `test-inputs/runtime-recorded.yaml` | Highest |
 | Fuzz generation | Auto-generate boundary inputs from function signature | `test-inputs/fuzz-generated.yaml` | Medium |
 | Manual provision | Analyst writes targeted test cases | `test-inputs/manual-cases.yaml` | On demand |
 
@@ -42,7 +42,9 @@ case. Verification results are the sole basis for the gate decision.
 - `iterations/<NNN>/functions/<fn_id>/decompilation-record.yaml`
 - `.work/reconstruction/<target-id>/src/<function_name>.c`
 - `.work/reconstruction/<target-id>/CMakeLists.txt`
-- Original binary path
+- Verification binary path
+- Optional reviewed mock verification binary path when runtime capture should
+  happen against a dedicated verification build instead of the imported target
 - (optional) `test-inputs/manual-cases.yaml`
 
 **Outputs (written to `iterations/<NNN>/functions/<fn_id>/`)**:
@@ -59,11 +61,17 @@ Phase A — Test Input Preparation
   2. Run fuzz-input-gen.js to generate boundary inputs from signature
   3. Check for manual-cases.yaml
 
-Phase B — Original Behavior Recording
-  4. Frida attach to original binary
+Phase B — Runtime Behavior Recording
+  4. Frida attach to the selected verification binary
   5. Run io-capture.js to hook target function
   6. Drive execution with Phase A input set
   7. Write runtime-recorded.yaml and frida-io-recording.yaml
+
+Special case — reviewed mock verification binaries
+  - When runtime capture should use a dedicated mock binary instead of the
+    imported analysis target, record that path in `frida-io-recording.yaml`.
+  - The verification binary must be behaviorally equivalent for the exercised
+    cases and actually launchable in the current environment.
 
 Phase C — Reconstructed Function Execution
   9. Build reconstruction project (cmake --build build/)
@@ -107,7 +115,7 @@ gate_verdict: "pass"  # pass | fail | conditional
 - `cmake` + `make`/`ninja` — build reconstruction project
 
 **Strict prohibitions**:
-- ⛔ **Must not modify the original binary**
+- ⛔ **Must not modify the verification binary under test**
 - ⛔ **Must not modify `decompiled-output/`** (decompilation output is read-only input)
 - ⛔ Must not modify other functions' verification results
 - ⛔ Must not automatically modify reconstruction code on verification failure (fixes belong to the next batch-decompile iteration)
@@ -125,7 +133,7 @@ gate_verdict: "pass"  # pass | fail | conditional
 You are the Frida I/O verification agent ({fn_id}: {function_name}@{address}).
 Your responsibilities:
 1. Generate fuzz test inputs based on function prototype
-2. Frida hook the original function, record I/O for each input
+2. Frida hook the selected verification function, record I/O for each input
 3. Build reconstruction code, execute with same inputs
 4. Compare return values and side effects case by case
 5. Write verification-result.yaml as the gate verdict basis

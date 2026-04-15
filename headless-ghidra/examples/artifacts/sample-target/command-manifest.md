@@ -21,7 +21,8 @@
   - `baseline`, `call-graph`, `review-evidence`, `target-selection`,
     `apply-renames`, `verify-renames`, `apply-signatures`,
     `verify-signatures`, `lint-review-artifacts`, and
-    `decompile-selected` all completed successfully against `/bin/ls`
+    `decompile-selected` all completed successfully against the reviewed mock
+    `ls` verification binary
   - the wrapper now writes runtime logs and redirected Ghidra user-home state
     under `.work/`
   - when the ambient shell points `JAVA_HOME` at an unsupported JDK, the
@@ -44,7 +45,7 @@
 export WORKSPACE_ROOT=$PWD
 export SKILL_ROOT=/path/to/installed/headless-ghidra
 export TARGET_ID=sample-target
-export TARGET_BINARY=/bin/ls
+export TARGET_BINARY=$WORKSPACE_ROOT/.work/verification/mock-ls/build/ls
 export GHIDRA_INSTALL_DIR=/path/to/ghidra
 export PROJECT_ROOT=$WORKSPACE_ROOT/.work/ghidra-projects/$TARGET_ID
 export ARTIFACT_ROOT=$WORKSPACE_ROOT/.work/ghidra-artifacts/$TARGET_ID

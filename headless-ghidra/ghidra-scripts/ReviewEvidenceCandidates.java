@@ -37,6 +37,7 @@ public class ReviewEvidenceCandidates extends GhidraScript {
         String name;
         String entry;
         String kind;
+        boolean importedThunk;
         String namespace;
         String currentSignature;
         int incomingRefs;
@@ -172,6 +173,14 @@ public class ReviewEvidenceCandidates extends GhidraScript {
             + " | calling=" + function.getCallingConventionName();
     }
 
+    private boolean isImportedThunk(Function function) {
+        if (!function.isThunk()) {
+            return false;
+        }
+        Function thunkedFunction = function.getThunkedFunction(false);
+        return thunkedFunction != null && thunkedFunction.isExternal();
+    }
+
     private List<FunctionCandidate> collectFunctionCandidates(int limit) {
         List<FunctionCandidate> candidates = new ArrayList<>();
         FunctionManager manager = currentProgram.getFunctionManager();
@@ -181,7 +190,9 @@ public class ReviewEvidenceCandidates extends GhidraScript {
             FunctionCandidate candidate = new FunctionCandidate();
             candidate.name = function.getName();
             candidate.entry = function.getEntryPoint().toString();
-            candidate.kind = function.isThunk() ? "thunk" : "substantive_body";
+            candidate.importedThunk = isImportedThunk(function);
+            candidate.kind = candidate.importedThunk ? "import_thunk"
+                : (function.isThunk() ? "thunk" : "substantive_body");
             candidate.namespace = namespaceName(function);
             candidate.currentSignature = describeFunctionSignature(function);
             candidate.incomingRefs = countIncomingRefs(function);
@@ -189,8 +200,11 @@ public class ReviewEvidenceCandidates extends GhidraScript {
             candidate.namedContext = !hasDefaultFunctionName(function);
             candidate.frontierEligibility = "deferred";
             candidate.frontierBasis = "child_of_matched_boundary";
-            candidate.relationshipType = function.isThunk() ? "wrapper_edge" : "callee";
-            if (function.isThunk()) {
+            candidate.relationshipType = (function.isThunk() || candidate.importedThunk) ? "wrapper_edge" : "callee";
+            if (candidate.importedThunk) {
+                candidate.triggeringEvidence =
+                    "external_import_thunk; defer this row until a substantive internal boundary is unavailable or explicitly required";
+            } else if (function.isThunk()) {
                 candidate.triggeringEvidence = "thunk_edge; confirm whether this helper is the current frontier boundary";
             } else if (candidate.namedContext) {
                 candidate.triggeringEvidence = "existing_name_context; confirm whether this row is outermost or a child of a matched boundary";
@@ -205,6 +219,9 @@ public class ReviewEvidenceCandidates extends GhidraScript {
         Collections.sort(candidates, new Comparator<FunctionCandidate>() {
             @Override
             public int compare(FunctionCandidate left, FunctionCandidate right) {
+                if (left.importedThunk != right.importedThunk) {
+                    return left.importedThunk ? 1 : -1;
+                }
                 boolean leftHelper = "thunk".equals(left.kind);
                 boolean rightHelper = "thunk".equals(right.kind);
                 if (leftHelper != rightHelper) {
@@ -220,15 +237,30 @@ public class ReviewEvidenceCandidates extends GhidraScript {
         if (candidates.size() > limit) {
             candidates = new ArrayList<>(candidates.subList(0, limit));
         }
-        if (!candidates.isEmpty()) {
-            FunctionCandidate first = candidates.get(0);
+        FunctionCandidate first = null;
+        for (FunctionCandidate candidate : candidates) {
+            if (!candidate.importedThunk) {
+                first = candidate;
+                break;
+            }
+        }
+        if (first == null && !candidates.isEmpty()) {
+            first = candidates.get(0);
+        }
+        if (first != null) {
             first.frontierEligibility = "eligible";
             first.frontierBasis = "outermost_anchor";
-            first.relationshipType = "thunk".equals(first.kind) ? "wrapper_edge" : "entry_adjacent";
-            if (!"thunk".equals(first.kind)) {
+            first.relationshipType = ("thunk".equals(first.kind) || first.importedThunk) ? "wrapper_edge" : "entry_adjacent";
+            if (!"thunk".equals(first.kind) && !first.importedThunk) {
                 first.kind = "outer_anchor";
             }
-            first.triggeringEvidence = "default frontier candidate; confirm this outermost row before treating deeper children as eligible";
+            if (first.importedThunk) {
+                first.triggeringEvidence =
+                    "fallback imported thunk candidate; confirm no substantive internal boundary is available before promoting this row";
+            } else {
+                first.triggeringEvidence =
+                    "default frontier candidate; confirm this outermost row before treating deeper children as eligible";
+            }
         }
         return candidates;
     }
@@ -306,6 +338,7 @@ public class ReviewEvidenceCandidates extends GhidraScript {
         sb.append("| Heuristic | Meaning |\n");
         sb.append("| --- | --- |\n");
         sb.append("| `candidate_kind` | Use helper-like rows to check whether a wrapper, thunk, or dispatch helper is the current frontier boundary. |\n");
+        sb.append("| `import_thunk` | Treat imported thunks as fallback-only rows; prefer substantive internal boundaries when available. |\n");
         sb.append("| `triggering_evidence` | Link every eligible row to imports, strings, or a matched parent boundary before promoting it. |\n");
         sb.append("| `secondary_metrics` | Incoming refs and body size stay visible as context only; they never authorize progression on their own. |\n\n");
 

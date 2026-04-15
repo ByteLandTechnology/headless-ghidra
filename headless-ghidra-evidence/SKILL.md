@@ -6,9 +6,10 @@ phase: "P2"
 
 # Headless Ghidra Evidence — P2 Evidence Review
 
-This skill extracts multi-dimension clues from baseline evidence, identifies
-third-party libraries, and synthesizes anchor points. The orchestrator dispatches
-up to 6 agents (4 parallel dimensions + synthesis + optional Frida).
+This skill extracts multi-dimension clues from the baseline Markdown exports
+and records the current frontier review in `evidence-candidates.md`. Optional
+Frida supplementation remains separate, but the validated static runtime surface
+for new runs is the single Markdown review file.
 
 ## Entry / Exit Gates
 
@@ -22,12 +23,12 @@ up to 6 agents (4 parallel dimensions + synthesis + optional Frida).
 
 | # | Task | Method | Output | Parallelism |
 |---|---|---|---|---|
-| 2.1 | Generate candidates | `ReviewEvidenceCandidates.java` | `evidence/evidence-candidates.yaml` | Agent-A |
+| 2.1 | Generate frontier review | `ReviewEvidenceCandidates.java` | `evidence-candidates.md` | Agent-A |
 | 2.2a | Review imports | Analyze imports | Embedded in candidates | **Agent-B** ⚡ |
 | 2.2b | Review strings | Analyze strings | Embedded in candidates | **Agent-C** ⚡ |
 | 2.2c | Review call graph | Analyze xrefs + types | Embedded in candidates | **Agent-D** ⚡ |
-| 2.2d | Identify libraries | Analyze all baselines → match known OSS libs | `evidence/library-identification.yaml` | **Agent-E** ⚡ |
-| 2.3 | Synthesize anchors | Aggregate → identify anchors (with library attribution) | `evidence/anchor-summary.yaml` | Agent-A |
+| 2.2d | Identify libraries | Analyze all baselines → match known OSS libs | Embedded in candidates | **Agent-E** ⚡ |
+| 2.3 | Synthesize frontier notes | Aggregate reviewed clues into the same export | Embedded in candidates | Agent-A |
 | 2.4 | Optional Frida | Frida runtime evidence collection | `evidence/frida-supplement.yaml` | **Agent-F** ⚡ |
 
 ## Agent Role Definitions
@@ -46,16 +47,16 @@ up to 6 agents (4 parallel dimensions + synthesis + optional Frida).
 
 | Agent | Primary input file |
 |---|---|
-| `evidence-review-imports` | `baseline/imports-and-libraries.yaml` |
-| `evidence-review-strings` | `baseline/strings-and-constants.yaml` |
-| `evidence-review-types` | `baseline/types-and-structs.yaml` + `baseline/xrefs-and-callgraph.yaml` |
+| `evidence-review-imports` | `imports-and-libraries.md` |
+| `evidence-review-strings` | `strings-and-constants.md` |
+| `evidence-review-types` | `types-and-structs.md` + `xrefs-and-callgraph.md` |
 
 **Outputs**:
-- Written to the corresponding dimension section of `evidence/evidence-candidates.yaml`
+- Written to the corresponding review sections of `evidence-candidates.md`
 
 **Strict prohibitions**:
 - ⛔ Must not run Ghidra or Frida
-- ⛔ Must not modify `baseline/` files
+- ⛔ Must not modify the baseline Markdown exports
 - ⛔ Must not write synthesis conclusions (that is `evidence-synthesize`'s job)
 - ⛔ Must not cross-reference other dimension agents' outputs
 
@@ -63,10 +64,10 @@ up to 6 agents (4 parallel dimensions + synthesis + optional Frida).
 
 ```
 You are a P2 evidence review agent ({dimension} dimension). Your responsibilities:
-1. Read baseline/{dimension_file}.yaml
+1. Read {dimension_file}.md
 2. Analyze each entry for clues related to target functions
 3. Assess strength for each clue (strong/moderate/weak)
-4. Write results to the corresponding dimension section in evidence/evidence-candidates.yaml
+4. Write results into the corresponding review section in evidence-candidates.md
 
 You are responsible for the {dimension} dimension only. Do not synthesize
 conclusions from other dimensions. Do not run Ghidra or Frida. Do not modify
@@ -86,27 +87,27 @@ baseline files.
 | **Parallelism** | ✅ Runs fully in parallel with the other three dimension agents |
 
 **Inputs**:
-- `baseline/imports-and-libraries.yaml`
-- `baseline/strings-and-constants.yaml`
-- `baseline/function-names.yaml`
-- `baseline/xrefs-and-callgraph.yaml`
+- `imports-and-libraries.md`
+- `strings-and-constants.md`
+- `function-names.md`
+- `xrefs-and-callgraph.md`
 
 **Outputs**:
-- `evidence/library-identification.yaml`
+- Record matched libraries and supporting evidence inside `evidence-candidates.md`
 
 **Identification methods**:
 
 | Signal | Data source | Example |
 |---|---|---|
-| Import symbol patterns | `imports-and-libraries.yaml` | `EVP_Decrypt*` → OpenSSL |
-| Feature strings | `strings-and-constants.yaml` | `"libcurl/7.88.0"` |
-| Build metadata | `strings-and-constants.yaml` | `"Built with CMake"` |
-| Function naming patterns | `function-names.yaml` + `xrefs` | `nghttp2_session_*` → nghttp2 |
-| Known constants | `strings-and-constants.yaml` | CRC tables, algorithm constants |
+| Import symbol patterns | `imports-and-libraries.md` | `EVP_Decrypt*` → OpenSSL |
+| Feature strings | `strings-and-constants.md` | `"libcurl/7.88.0"` |
+| Build metadata | `strings-and-constants.md` | `"Built with CMake"` |
+| Function naming patterns | `function-names.md` + `xrefs` | `nghttp2_session_*` → nghttp2 |
+| Known constants | `strings-and-constants.md` | CRC tables, algorithm constants |
 
 **Strict prohibitions**:
 - ⛔ Must not run Ghidra or Frida
-- ⛔ Must not modify `baseline/` files
+- ⛔ Must not modify the baseline Markdown exports
 - ⛔ Must not claim a match without evidence (each match must have `evidence` entries)
 - ⛔ Must not download or execute third-party library code (identification only)
 
@@ -118,7 +119,7 @@ You are the P2 third-party library identification agent. Your responsibilities:
 2. Infer which known open-source libraries the target binary depends on or modifies
 3. Determine version range for each matched library with supporting evidence
 4. Tag functions that likely derive from third-party libraries
-5. Output library-identification.yaml
+5. Record the matches in evidence-candidates.md
 
 You only identify — you do not fetch source code.
 Every match must have concrete evidence; do not claim matches without evidence.
@@ -137,16 +138,15 @@ confidence is based on evidence strength:
 | **Agent ID** | `evidence-synthesize` |
 | **Instances** | 1 (launched after all 4 dimension agents complete) |
 | **Lifecycle** | Short-lived |
-| **Role** | Aggregate dimension review results and library identification to identify strongest anchor points |
+| **Role** | Aggregate reviewed dimension results to identify the strongest frontier anchor points |
 | **Parallelism** | ⛔ Must wait for all dimension agents to complete |
 
 **Inputs**:
-- `evidence/evidence-candidates.yaml`
-- `evidence/library-identification.yaml`
-- `baseline/xrefs-and-callgraph.yaml`
+- `evidence-candidates.md`
+- `xrefs-and-callgraph.md`
 
 **Outputs**:
-- `evidence/anchor-summary.yaml`
+- Frontier synthesis is recorded in `evidence-candidates.md`
 
 Anchors matching third-party libraries are tagged with `derived_from_library`
 and `reconstruction_strategy`.
@@ -159,14 +159,13 @@ and `reconstruction_strategy`.
 
 ```
 You are the P2 evidence synthesis agent. Your responsibilities:
-1. Read dimension review results from evidence-candidates.yaml
-2. Read third-party library matches from library-identification.yaml
-3. Cross-compare to identify strong multi-dimension anchor points
-4. Use xrefs-and-callgraph.yaml to determine entry adjacency
-5. Tag library-derived functions with derived_from_library and reconstruction_strategy
-6. Output anchor-summary.yaml, sorted by strength
+1. Read dimension review results from evidence-candidates.md
+2. Cross-compare to identify strong multi-dimension anchor points
+3. Use xrefs-and-callgraph.md to determine entry adjacency
+4. Tag library-derived functions with frontier reasoning and supporting evidence
+5. Update evidence-candidates.md with the synthesized frontier notes
 
-You only synthesize existing dimension results and library identification.
+You only synthesize existing reviewed results.
 Do not add new evidence.
 ```
 
@@ -212,13 +211,13 @@ inside the target.
 
 | ID | Check | Type |
 |---|---|---|
-| P2_01 | `evidence/evidence-candidates.yaml` exists | blocking |
-| P2_02 | `evidence/library-identification.yaml` exists | blocking |
-| P2_03 | `evidence/anchor-summary.yaml` exists | blocking |
-| P2_04 | anchor-summary contains at least 1 anchor | blocking |
-| P2_05 | Every anchor has `address` + `frontier_reason` | blocking |
-| P2_06 | Every library in library-identification has `confidence` + `evidence` | blocking |
+| P2_01 | `evidence-candidates.md` exists | blocking |
+| P2_02 | `evidence-candidates.md` is non-empty | blocking |
+| P2_03 | `## Frontier Candidate Rows` is present | blocking |
+| P2_04 | candidate table contains at least 1 row | blocking |
+| P2_05 | frontier reasoning columns remain visible in the table | blocking |
+| P2_06 | `## Recommended Review Prompts` is present | warning |
 
 ## Next Step Routing
 
-- P2 gate passes → orchestrator enters iteration loop, starting with P3 (`headless-ghidra-discovery`).
+- P2 gate passes → orchestrator enters the selection loop, starting with P3 (`headless-ghidra-discovery`).

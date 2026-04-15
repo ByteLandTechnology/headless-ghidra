@@ -1,20 +1,21 @@
 ---
 name: "headless-ghidra-discovery"
-description: "P3 sub-skill: analyze verified boundaries and baseline evidence to discover the next batch of frontier-eligible functions for decompilation."
+description: "P3 sub-skill: analyze verified boundaries and reviewed evidence to record the next frontier-eligible automatic default target."
 phase: "P3"
 ---
 
-# Headless Ghidra Discovery — P3 Batch Discovery
+# Headless Ghidra Discovery — P3 Target Selection
 
-This skill analyzes verified boundaries and baseline evidence to determine the
-next batch of frontier-eligible functions for decompilation.
+This skill analyzes verified boundaries, baseline evidence, and the current
+frontier review to determine the next automatic default target for
+decompilation.
 
 ## Entry / Exit Gates
 
 | Property | Value |
 |---|---|
 | **Entry gate** | First round: `gate-check.sh --gate P2`; subsequent: previous P6 complete |
-| **Exit gate** | `gate-check.sh --gate P3 --iteration <NNN>` passes |
+| **Exit gate** | Current runtime: `gate-check.sh --gate P3`; legacy fallback: `gate-check.sh --gate P3 --iteration <NNN>` |
 | **Parallelism** | ⛔ Discovery itself is not parallelizable |
 
 ## Agent Role Definition
@@ -26,16 +27,17 @@ next batch of frontier-eligible functions for decompilation.
 | **Agent ID** | `discovery` |
 | **Instances** | 1 (invoked once per iteration) |
 | **Lifecycle** | Short-lived |
-| **Role** | Analyze verified boundaries and baseline evidence to determine the next frontier-eligible batch |
+| **Role** | Analyze verified boundaries and reviewed evidence to determine the next frontier-eligible automatic default target |
 
 **Inputs**:
 - `pipeline-state.yaml` (`verified_boundaries`, `iterations` history)
-- `evidence/anchor-summary.yaml`
-- `baseline/xrefs-and-callgraph.yaml`
-- `baseline/function-names.yaml`
+- `evidence-candidates.md`
+- `xrefs-and-callgraph.md`
+- `function-names.md`
 
 **Outputs**:
-- `iterations/<NNN>/batch-manifest.yaml`
+- `target-selection.md` (current validated runtime surface)
+- Legacy fallback only: `iterations/<NNN>/batch-manifest.yaml`
 
 **Frontier priority** (highest to lowest):
 
@@ -47,28 +49,19 @@ next batch of frontier-eligible functions for decompilation.
 | 4 | Other children of verified boundaries |
 | 5 | Stable address-order tiebreak |
 
-**`batch-manifest.yaml` format**:
+**`target-selection.md` required fields**:
 
-```yaml
-iteration: 1
-created_at: "2026-04-09T10:35:00Z"
-batch_size: 3
-status: "pending"
+- `Selected Target`
+- `Selection Mode`
+- `Candidate Kind`
+- `Frontier Reason`
+- `Selection Reason`
+- `Question To Answer`
+- `Tie-Break Rationale`
+- `Metrics Note`
 
-functions:
-  - id: "fn_001"
-    name: "FUN_00102140"
-    address: "0x00102140"
-    priority: 1
-    frontier_reason: "entry-adjacent dispatcher"
-    relationship_type: "entry_adjacent"
-    verified_parent: null
-    triggering_evidence:
-      - source: "strings-and-constants.yaml"
-        detail: "'invalid packet'"
-    question_to_answer: "does this function validate headers before dispatch?"
-    status: "pending"
-```
+Candidate review rows must preserve frontier eligibility, triggering evidence,
+and status so downstream phases can see why the automatic default was chosen.
 
 **Available tools**:
 - `yq` — YAML read/write
@@ -81,10 +74,10 @@ functions:
 - ⛔ Must not modify `verified_boundaries` (read-only)
 
 **Termination conditions**:
-- `batch-manifest.yaml` written
-- Contains at least 1 function
-- Every function has `address`, `frontier_reason`, `question_to_answer`
-- No duplicate addresses
+- `target-selection.md` written
+- Automatic default selection table is present
+- Candidate selection rows are present
+- The selected row records frontier reason and question-to-answer context
 
 **System prompt**:
 
@@ -93,7 +86,7 @@ You are the P3 batch discovery agent. Your responsibilities:
 1. Read verified boundaries from pipeline-state.yaml
 2. Compute the current frontier-eligible function set
 3. Sort by 5-level priority
-4. Output batch-manifest.yaml
+4. Output target-selection.md
 
 You do not decompile, rename, or modify any existing artifacts.
 ```
@@ -102,12 +95,12 @@ You do not decompile, rename, or modify any existing artifacts.
 
 | ID | Check | Type |
 |---|---|---|
-| P3_01 | `iterations/<NNN>/batch-manifest.yaml` exists | blocking |
-| P3_02 | `functions` list is non-empty | blocking |
-| P3_03 | Every function has `address` + `frontier_reason` + `question_to_answer` | blocking |
-| P3_04 | No duplicate addresses | blocking |
-| P3_05 | Every function `status` = `pending` | blocking |
+| P3_01 | `target-selection.md` exists | blocking |
+| P3_02 | `## Automatic Default Selection` is present | blocking |
+| P3_03 | selection fields include selected target, frontier reason, and question | blocking |
+| P3_04 | `## Candidate Selection Rows` is present | blocking |
+| P3_05 | at least one row is marked ready or selected as the default | blocking |
 
 ## Next Step Routing
 
-- P3 gate passes → orchestrator shows dialog for user to confirm batch → enters P4+P5 (`headless-ghidra-batch-decompile`).
+- P3 gate passes → orchestrator shows the reviewed selection to the user, then enters P4+P5 (`headless-ghidra-batch-decompile`).

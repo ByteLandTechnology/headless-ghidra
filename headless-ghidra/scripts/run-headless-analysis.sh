@@ -34,11 +34,15 @@ Options:
                              apply-renames, plan-verify-renames,
                              verify-renames, plan-apply-signatures,
                              apply-signatures, plan-verify-signatures,
-                             verify-signatures, plan-lint-review-artifacts,
+                             verify-signatures, verify-io,
+                             plan-lint-review-artifacts,
                              lint-review-artifacts.
                              Aliases: plan -> plan-baseline,
                              regenerate -> baseline.
   --binary PATH              Binary to import or process.
+  --capture-binary PATH      Alternate binary used only for Frida runtime capture
+                             during verify-io. Commonly a mock verification
+                             binary. Defaults to --binary.
   --target-id ID             Stable target identifier. Defaults to the binary basename.
   --workspace-root PATH      Root of the analysis workspace. Defaults to
                              GHIDRA_WORKSPACE_ROOT, then the git repo root from
@@ -56,8 +60,15 @@ Options:
                              signature-log.md under <artifacts-dir>.
   --install-dir PATH         Preferred Ghidra install directory.
   --project-slug SLUG        Upstream project slug for Source Comparison planning.
+  --iteration NNN            Iteration directory for per-function verification
+                             actions such as verify-io.
+  --function ID              Function directory id (for example fn_001) for
+                             per-function verification actions such as verify-io.
   --selected-function VALUE  Selected function name, address, or name@address
                              for Selected Decompilation (repeatable).
+  --runtime-arg VALUE        Runtime argument forwarded to verify-io when it
+                             spawns the selected verification binary
+                             (repeatable).
   --extra-arg VALUE          Extra arg forwarded to analyzeHeadless (repeatable).
   -h, --help                 Show this message.
 
@@ -69,6 +80,9 @@ Notes:
     external disassembly or decompilation tools such as `objdump`, `otool`,
     `llvm-objdump`, `nm`, `readelf`, `gdb`, `lldb`, and `radare2` are
     unsupported and do not satisfy pipeline gates.
+  - Successful Selected Decompilation also materializes a minimal
+    `iterations/<NNN>/functions/<fn_id>/...` handoff and initializes the
+    reconstruction project root when needed.
   - Runtime Java prefers GHIDRA_JAVA_HOME, then the recorded Ghidra JDK,
     then JAVA_HOME, then java on PATH.
   - Runtime artifacts default to <workspace-root>/.work/ghidra-artifacts/<target-id>/.
@@ -123,6 +137,21 @@ Record the function selection first, then rerun, for example:
     --binary /path/to/binary \
     --target-id sample-target \
     --selected-function FUN_00123456@00123456
+EOF
+  exit 1
+}
+
+fail_missing_verify_target() {
+  cat <<'EOF' >&2
+Per-function runtime verification requires both --iteration NNN and --function fn_XXX.
+
+For example:
+  bash <skill-root>/scripts/run-headless-analysis.sh \
+    --action verify-io \
+    --binary /path/to/binary \
+    --target-id sample-target \
+    --iteration 001 \
+    --function fn_001
 EOF
   exit 1
 }
@@ -229,6 +258,77 @@ detect_workspace_root() {
   cd "${PWD}" && pwd -P
 }
 
+python_supports_module() {
+  local candidate="$1"
+  local module_name="$2"
+  if [[ -z "${candidate}" || ! -x "${candidate}" ]]; then
+    return 1
+  fi
+  "${candidate}" -c 'import importlib.util, sys; raise SystemExit(0 if importlib.util.find_spec(sys.argv[1]) is not None else 1)' \
+    "${module_name}" >/dev/null 2>&1
+}
+
+select_verify_io_python() {
+  local -a candidates=()
+  local -a probed=()
+  local candidate=""
+  local name=""
+  local discovered=""
+  local seen=" "
+  local yaml_only_candidate=""
+
+  if [[ -n "${GHIDRA_VERIFY_IO_PYTHON:-}" ]]; then
+    candidates+=("${GHIDRA_VERIFY_IO_PYTHON}")
+  fi
+  if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+    candidates+=("${VIRTUAL_ENV}/bin/python3" "${VIRTUAL_ENV}/bin/python")
+  fi
+  for name in python3 python; do
+    while IFS= read -r discovered; do
+      [[ -n "${discovered}" ]] || continue
+      candidates+=("${discovered}")
+    done < <(which -a "${name}" 2>/dev/null || true)
+  done
+
+  for candidate in "${candidates[@]}"; do
+    if [[ "${candidate}" != /* ]]; then
+      candidate="$(command -v "${candidate}" 2>/dev/null || true)"
+    fi
+    [[ -n "${candidate}" ]] || continue
+    if [[ "${seen}" == *" ${candidate} "* ]]; then
+      continue
+    fi
+    seen="${seen}${candidate} "
+    probed+=("${candidate}")
+    if python_supports_module "${candidate}" yaml; then
+      if python_supports_module "${candidate}" frida; then
+        printf '%s\n' "${candidate}"
+        return 0
+      fi
+      if [[ -z "${yaml_only_candidate}" ]]; then
+        yaml_only_candidate="${candidate}"
+      fi
+    fi
+  done
+
+  if [[ -n "${yaml_only_candidate}" ]]; then
+    printf '%s\n' "${yaml_only_candidate}"
+    return 0
+  fi
+
+  {
+    printf 'verify-io requires a Python interpreter that can import yaml.\n'
+    printf 'Frida support is optional at startup because verify-frida-io.py can still emit structured blocked results or run fallback verification.\n'
+    printf 'Set GHIDRA_VERIFY_IO_PYTHON to a suitable interpreter, or install PyYAML into one of:\n'
+    if [[ ${#probed[@]} -gt 0 ]]; then
+      printf '  %s\n' "${probed[@]}"
+    else
+      printf '  (no python interpreters were discovered on PATH)\n'
+    fi
+  } >&2
+  exit 1
+}
+
 fail_forbidden_artifacts_dir() {
   cat <<EOF >&2
 Refusing to write runtime-generated artifacts under the skill directory.
@@ -248,8 +348,609 @@ EOF
 }
 
 print_running_command() {
-  printf 'Running: %q ' "$@"
+  printf 'Running:'
+  printf ' %q' "$@"
   printf '\n'
+}
+
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+normalize_inline_whitespace() {
+  local value="$1"
+  value="$(printf '%s' "${value}" | perl -0pe 's/\s+/ /g')"
+  value="$(trim_whitespace "${value}")"
+  printf '%s' "${value}"
+}
+
+write_yaml_scalar() {
+  local indent="$1"
+  local key="$2"
+  local value="$3"
+  if [[ -z "${value}" ]]; then
+    printf '%s%s: ""\n' "${indent}" "${key}"
+    return 0
+  fi
+  printf '%s%s: |-\n' "${indent}" "${key}"
+  while IFS= read -r yaml_line || [[ -n "${yaml_line}" ]]; do
+    printf '%s  %s\n' "${indent}" "${yaml_line}"
+  done <<< "${value}"
+}
+
+write_yaml_list_item() {
+  local indent="$1"
+  local value="$2"
+  if [[ -z "${value}" ]]; then
+    printf '%s- ""\n' "${indent}"
+    return 0
+  fi
+  printf '%s- |-\n' "${indent}"
+  while IFS= read -r yaml_line || [[ -n "${yaml_line}" ]]; do
+    printf '%s  %s\n' "${indent}" "${yaml_line}"
+  done <<< "${value}"
+}
+
+extract_prototype_line() {
+  local raw_code="$1"
+  local function_name="$2"
+  local prototype=""
+
+  prototype="$(
+    printf '%s\n' "${raw_code}" | awk '
+      BEGIN { in_block = 0; collecting = 0; depth = 0; prototype = ""; emitted = 0 }
+      function count_char(text, char,  stripped, count) {
+        stripped = text
+        count = gsub(char, "", stripped)
+        return count
+      }
+      function append_part(part) {
+        if (prototype == "") {
+          prototype = part
+        } else {
+          prototype = prototype " " part
+        }
+      }
+      {
+        line = $0
+        trimmed = line
+        sub(/^[[:space:]]+/, "", trimmed)
+        sub(/[[:space:]]+$/, "", trimmed)
+
+        if (in_block && !collecting) {
+          if (trimmed ~ /\*\//) {
+            in_block = 0
+          }
+          next
+        }
+        if (!collecting && trimmed ~ /^\/\*/) {
+          if (trimmed !~ /\*\//) {
+            in_block = 1
+          }
+          next
+        }
+        if (!collecting && (trimmed == "" || trimmed ~ /^\/\// || trimmed ~ /^\*/ || trimmed ~ /^#/)) {
+          next
+        }
+        if (!collecting) {
+          if (trimmed ~ /\(/ && trimmed !~ /=/) {
+            collecting = 1
+          } else {
+            next
+          }
+        }
+        if (collecting) {
+          sub(/\{$/, "", trimmed)
+          append_part(trimmed)
+          depth += count_char(trimmed, /\(/) - count_char(trimmed, /\)/)
+          if (depth <= 0 && trimmed !~ /,$/) {
+            print prototype
+            emitted = 1
+            exit
+          }
+        }
+      }
+      END {
+        if (!emitted && prototype != "") {
+          print prototype
+        }
+      }
+    '
+  )"
+
+  if [[ -z "${prototype}" ]]; then
+    prototype="void ${function_name}(void)"
+  fi
+
+  prototype="$(normalize_inline_whitespace "${prototype}")"
+  prototype="${prototype%;}"
+  printf '%s\n' "${prototype}"
+}
+
+refresh_reconstruction_scaffold() {
+  local recon_root="$1"
+  local project_id="${TARGET_ID}_reconstruction"
+
+  mkdir -p "${recon_root}/include/common" "${recon_root}/build"
+
+  cat > "${recon_root}/CMakeLists.txt" <<EOF
+cmake_minimum_required(VERSION 3.20)
+project(${project_id} C)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+  add_compile_options(
+    -Wno-error=implicit-function-declaration
+    -Wno-int-conversion
+    -Wno-incompatible-pointer-types
+    -Wno-pointer-sign
+  )
+endif()
+
+# Debug by default for reconstruction
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Debug)
+endif()
+
+# Include directories
+include_directories(include)
+
+# Collect sources
+file(GLOB RECON_SOURCES CONFIGURE_DEPENDS "src/*.c")
+file(GLOB STUB_SOURCES CONFIGURE_DEPENDS "stubs/*.c")
+
+# Main reconstruction library
+add_library(reconstruction STATIC \${RECON_SOURCES} \${STUB_SOURCES})
+target_link_libraries(reconstruction dl)
+
+# Test harness
+file(GLOB TEST_SOURCES CONFIGURE_DEPENDS "tests/*_test.c")
+if(TEST_SOURCES)
+  add_executable(test_runner tests/harness/test_runner.c \${TEST_SOURCES})
+  target_link_libraries(test_runner reconstruction)
+endif()
+EOF
+
+  cat > "${recon_root}/include/common/types.h" <<'EOF'
+/* types.h — Exported types and structs from Ghidra analysis.
+ * Auto-generated by the headless-ghidra pipeline. */
+#ifndef COMMON_TYPES_H
+#define COMMON_TYPES_H
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <sys/types.h>
+
+/* Baseline exported types will extend these common Ghidra aliases. */
+typedef uint8_t byte;
+typedef uint8_t undefined;
+typedef uint8_t undefined1;
+typedef uint16_t undefined2;
+typedef uint32_t undefined4;
+typedef uint64_t undefined8;
+typedef unsigned short ushort;
+typedef unsigned int uint;
+typedef unsigned long ulong;
+typedef int BOOL;
+
+#endif /* COMMON_TYPES_H */
+EOF
+
+  cat > "${recon_root}/include/common/constants.h" <<'EOF'
+/* constants.h — Exported constants from Ghidra analysis.
+ * Auto-generated by the headless-ghidra pipeline. */
+#ifndef COMMON_CONSTANTS_H
+#define COMMON_CONSTANTS_H
+
+/* Constants will be populated by the baseline export phase. */
+
+#endif /* COMMON_CONSTANTS_H */
+EOF
+}
+
+refresh_reconstruction_cmake() {
+  local recon_root="$1"
+  if command -v cmake >/dev/null 2>&1 && [[ -f "${recon_root}/CMakeLists.txt" ]]; then
+    cmake -S "${recon_root}" -B "${recon_root}/build" >/dev/null
+  fi
+}
+
+sanitize_decompiled_c() {
+  local raw_code="$1"
+  local function_name="$2"
+  local sanitized="${raw_code}"
+  local helper_block=""
+  local ptr_symbols=""
+  local dat_symbols=""
+  local fun_symbols=""
+  local sym=""
+
+  sanitized="$(printf '%s\n' "${sanitized}" | sed 's/(code \*)/(ghidra_func_ptr_t)/g')"
+  sanitized="$(printf '%s\n' "${sanitized}" | perl -0pe 's/\bcode \*/ghidra_func_ptr_t /g')"
+
+  helper_block+='#include "common/types.h"\n'
+  helper_block+='#include "common/constants.h"\n'
+  helper_block+='#include <err.h>\n'
+  helper_block+='#include <fts.h>\n'
+  helper_block+='#include <getopt.h>\n'
+  helper_block+='#include <locale.h>\n'
+  helper_block+='#include <signal.h>\n'
+  helper_block+='#include <stdio.h>\n'
+  helper_block+='#include <stdlib.h>\n'
+  helper_block+='#include <string.h>\n'
+  helper_block+='#include <sys/ioctl.h>\n'
+  helper_block+='#include <sys/sysctl.h>\n'
+  helper_block+='#include <term.h>\n'
+  helper_block+='#include <unistd.h>\n\n'
+  helper_block+='\n'
+
+  if printf '%s\n' "${sanitized}" | rg -n '\bghidra_func_ptr_t\b' >/dev/null 2>&1; then
+    helper_block+="typedef void (*ghidra_func_ptr_t)(void);\n"
+  fi
+
+  ptr_symbols="$(printf '%s\n' "${sanitized}" | grep -o 'PTR_[A-Za-z0-9_]*' | sort -u || true)"
+  if [[ -n "${ptr_symbols}" ]]; then
+    while IFS= read -r sym; do
+      [[ -n "${sym}" ]] || continue
+      helper_block+="extern void *${sym};\n"
+    done <<< "${ptr_symbols}"
+  fi
+
+  dat_symbols="$(printf '%s\n' "${sanitized}" | grep -o 'DAT_[A-Za-z0-9_]*' | sort -u || true)"
+  if [[ -n "${dat_symbols}" ]]; then
+    while IFS= read -r sym; do
+      [[ -n "${sym}" ]] || continue
+      helper_block+="extern uintptr_t ${sym};\n"
+    done <<< "${dat_symbols}"
+  fi
+
+  fun_symbols="$(printf '%s\n' "${sanitized}" | grep -o 'FUN_[A-Za-z0-9_]*' | sort -u || true)"
+  if [[ -n "${fun_symbols}" ]]; then
+    while IFS= read -r sym; do
+      [[ -n "${sym}" ]] || continue
+      if [[ "${sym}" == "${function_name}" ]]; then
+        continue
+      fi
+      helper_block+="extern uintptr_t ${sym}();\n"
+    done <<< "${fun_symbols}"
+  fi
+
+  printf '%b\n%s\n' "${helper_block}" "${sanitized}"
+}
+
+next_iteration_id() {
+  local iterations_root="${ARTIFACTS_DIR}/iterations"
+  local max_seen=0
+  local entry=""
+  local base=""
+  local numeric=0
+
+  if [[ -d "${iterations_root}" ]]; then
+    for entry in "${iterations_root}"/*; do
+      [[ -d "${entry}" ]] || continue
+      base="$(basename "${entry}")"
+      [[ "${base}" =~ ^[0-9]{3}$ ]] || continue
+      numeric=$((10#${base}))
+      if (( numeric > max_seen )); then
+        max_seen=${numeric}
+      fi
+    done
+  fi
+
+  printf '%03d\n' $((max_seen + 1))
+}
+
+derive_reconstruction_root() {
+  local artifact_root="$1"
+  local parent_root=""
+
+  if [[ "${artifact_root}" == *"/ghidra-artifacts/"* ]]; then
+    printf '%s\n' "${artifact_root/\/ghidra-artifacts\//\/reconstruction\/}"
+    return 0
+  fi
+
+  parent_root="$(dirname "$(dirname "${artifact_root}")")"
+  printf '%s\n' "${parent_root}/reconstruction/$(basename "${artifact_root}")"
+}
+
+ensure_reconstruction_root() {
+  local recon_root=""
+  local arch="x86_64"
+
+  recon_root="$(derive_reconstruction_root "${ARTIFACTS_DIR}")"
+
+  if [[ -f "${recon_root}/reconstruction-manifest.yaml" ]]; then
+    printf '%s\n' "${recon_root}"
+    return 0
+  fi
+
+  if command -v uname >/dev/null 2>&1; then
+    case "$(uname -m 2>/dev/null || true)" in
+      arm64|aarch64)
+        arch="arm64"
+        ;;
+    esac
+  fi
+
+  mkdir -p "$(dirname "${recon_root}")"
+  "${SCRIPT_DIR}/reconstruction-init.sh" \
+    --target-id "${TARGET_ID}" \
+    --reconstruction-root "${recon_root}" \
+    --arch "${arch}" >/dev/null
+  refresh_reconstruction_scaffold "${recon_root}"
+  printf '%s\n' "${recon_root}"
+}
+
+is_placeholder_decompilation() {
+  local code="$1"
+  local trimmed=""
+
+  trimmed="$(printf '%s\n' "${code}" | perl -0pe 's/\A\s+//; s/\s+\z//')"
+  if [[ -z "${trimmed}" ]]; then
+    return 0
+  fi
+  if [[ "${trimmed}" == '/* Decompiled output unavailable. */' ]]; then
+    return 0
+  fi
+  if [[ "${trimmed}" == '/* Decompilation unavailable. */' ]]; then
+    return 0
+  fi
+  return 1
+}
+
+write_materialized_function_artifacts() {
+  local iteration_id="$1"
+  local order="$2"
+  local function_name="$3"
+  local function_identity="$4"
+  local selection_reason="$5"
+  local role_evidence_text="$6"
+  local name_evidence_text="$7"
+  local prototype_evidence_text="$8"
+  local confidence_text="$9"
+  local open_questions_text="${10}"
+  local code="${11}"
+  local recon_root="${12}"
+
+  local fn_id=""
+  local fn_dir=""
+  local address=""
+  local decompiled_file=""
+  local header_file=""
+  local header_guard=""
+  local prototype_line=""
+  local sanitized_code=""
+  local decomp_status="passed"
+  local decomp_reason="Selected decompilation export completed via ghidra_headless."
+
+  printf -v fn_id 'fn_%03d' "${order}"
+  fn_dir="${ARTIFACTS_DIR}/iterations/${iteration_id}/functions/${fn_id}"
+  mkdir -p "${fn_dir}/decompiled-output"
+
+  address="${function_identity##*@}"
+  if [[ -z "${address}" || "${address}" == "${function_identity}" ]]; then
+    address="unknown"
+  fi
+
+  decompiled_file="${fn_dir}/decompiled-output/${function_name}.c"
+  header_file="${recon_root}/include/${function_name}.h"
+
+  if [[ -z "${code}" ]]; then
+    code="/* Decompiled output unavailable. */"
+  fi
+  if is_placeholder_decompilation "${code}"; then
+    decomp_status="failed"
+    decomp_reason="Selected decompilation only exported the unavailable placeholder."
+  fi
+  sanitized_code="$(sanitize_decompiled_c "${code}" "${function_name}")"
+
+  prototype_line="$(extract_prototype_line "${code}" "${function_name}")"
+
+  mkdir -p "${recon_root}/src" "${recon_root}/include"
+
+  {
+    printf '#include "%s.h"\n\n' "${function_name}"
+    printf '%s\n' "${sanitized_code}"
+  } > "${decompiled_file}"
+  cp "${decompiled_file}" "${recon_root}/src/${function_name}.c"
+
+  header_guard="$(printf '%s_H' "${function_name}" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9_' '_')"
+  {
+    printf '#ifndef %s\n' "${header_guard}"
+    printf '#define %s\n\n' "${header_guard}"
+    printf '#include "common/types.h"\n'
+    printf '#include "common/constants.h"\n\n'
+    printf '%s;\n\n' "${prototype_line}"
+    printf '#endif /* %s */\n' "${header_guard}"
+  } > "${header_file}"
+
+  {
+    write_yaml_scalar "" "function_id" "${fn_id}"
+    write_yaml_scalar "" "function_name" "${function_name}"
+    write_yaml_scalar "" "address" "${address}"
+    write_yaml_scalar "" "function_identity" "${function_identity}"
+    write_yaml_scalar "" "selection_record_path" "${ARTIFACTS_DIR}/target-selection.md"
+    printf 'decompiled_source: |-\n'
+    printf '%s\n' "${code}" | sed 's/^/  /'
+    printf 'decompilation_backend: "ghidra_headless"\n'
+    printf 'decompilation_action: "decompile-selected"\n'
+    printf 'outer_to_inner_order: %s\n' "${order}"
+    write_yaml_scalar "" "confidence" "${confidence_text:-pending_manual_review}"
+  } > "${fn_dir}/decompilation-record.yaml"
+
+  {
+    write_yaml_scalar "" "function_id" "${fn_id}"
+    write_yaml_scalar "" "function_name" "${function_name}"
+    write_yaml_scalar "" "address" "${address}"
+    write_yaml_scalar "" "function_identity" "${function_identity}"
+    write_yaml_scalar "" "selection_reason" "${selection_reason:-pending_manual_review}"
+    printf 'role_evidence:\n'
+    write_yaml_list_item "  " "${role_evidence_text:-selected_decompilation_exported_from_target_selection}"
+    printf 'name_evidence:\n'
+    write_yaml_list_item "  " "${name_evidence_text:-function_identity_${function_identity}}"
+    printf 'prototype_evidence:\n'
+    write_yaml_list_item "  " "${prototype_evidence_text:-decompiled_prototype_${prototype_line}}"
+    printf 'open_questions:\n'
+    write_yaml_list_item "  " "${open_questions_text:-complete_manual_role_name_and_prototype_review}"
+    printf 'status: "pending_manual_review"\n'
+  } > "${fn_dir}/semantic-record.yaml"
+
+  {
+    write_yaml_scalar "" "function_id" "${fn_id}"
+    write_yaml_scalar "" "function_name" "${function_name}"
+    write_yaml_scalar "" "address" "${address}"
+    write_yaml_scalar "" "function_identity" "${function_identity}"
+    printf 'reference_status: "deferred"\n'
+    write_yaml_scalar "" "reference_summary" "No reviewed upstream reference has been materialized for this function yet."
+    write_yaml_scalar "" "selection_record_path" "${ARTIFACTS_DIR}/target-selection.md"
+    write_yaml_scalar "" "comparison_command_log_path" "${ARTIFACTS_DIR}/comparison-command-log.md"
+  } > "${fn_dir}/source-comparison.yaml"
+
+  {
+    write_yaml_scalar "" "function_id" "${fn_id}"
+    write_yaml_scalar "" "function_name" "${function_name}"
+    write_yaml_scalar "" "address" "${address}"
+    printf 'results:\n'
+    printf '  - step: "rename_verification"\n'
+    printf '    status: "skipped"\n'
+    write_yaml_scalar "    " "reason" "No per-function rename mutations were materialized during selected decompilation export."
+    printf '  - step: "signature_verification"\n'
+    printf '    status: "skipped"\n'
+    write_yaml_scalar "    " "reason" "No per-function signature mutations were materialized during selected decompilation export."
+    printf '  - step: "decompilation_export"\n'
+    printf '    status: "%s"\n' "${decomp_status}"
+    write_yaml_scalar "    " "reason" "${decomp_reason}"
+  } > "${fn_dir}/verify-report.yaml"
+}
+
+materialize_selected_decompilation() {
+  local decomp_md="${ARTIFACTS_DIR}/decompiled-output.md"
+  local iteration_id=""
+  local recon_root=""
+  local line=""
+  local in_code=0
+  local current_order=0
+  local current_name=""
+  local current_identity=""
+  local current_selection_reason=""
+  local current_role_evidence=""
+  local current_name_evidence=""
+  local current_prototype_evidence=""
+  local current_confidence=""
+  local current_open_questions=""
+  local current_code=""
+  local wrote_any=0
+  local wrote_real_code=0
+
+  [[ -f "${decomp_md}" ]] || return 1
+
+  iteration_id="$(next_iteration_id)"
+  recon_root="$(ensure_reconstruction_root)"
+  mkdir -p "${ARTIFACTS_DIR}/iterations/${iteration_id}/functions"
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if (( in_code )); then
+      if [[ "${line}" == '```' ]]; then
+        in_code=0
+      else
+        current_code+="${line}"$'\n'
+      fi
+      continue
+    fi
+
+    if [[ "${line}" =~ ^###\ Function\ ([0-9]+):\ \`(.+)\`$ ]]; then
+      if [[ -n "${current_name}" ]]; then
+        if ! is_placeholder_decompilation "${current_code%$'\n'}"; then
+          wrote_real_code=1
+        fi
+        write_materialized_function_artifacts \
+          "${iteration_id}" \
+          "${current_order}" \
+          "${current_name}" \
+          "${current_identity}" \
+          "${current_selection_reason}" \
+          "${current_role_evidence}" \
+          "${current_name_evidence}" \
+          "${current_prototype_evidence}" \
+          "${current_confidence}" \
+          "${current_open_questions}" \
+          "${current_code%$'\n'}" \
+          "${recon_root}"
+        wrote_any=1
+      fi
+      current_order="${BASH_REMATCH[1]}"
+      current_name="${BASH_REMATCH[2]}"
+      current_identity=""
+      current_selection_reason=""
+      current_role_evidence=""
+      current_name_evidence=""
+      current_prototype_evidence=""
+      current_confidence=""
+      current_open_questions=""
+      current_code=""
+      continue
+    fi
+
+    [[ -n "${current_name}" ]] || continue
+
+    if [[ "${line}" =~ ^-\ \`function_identity\`:\ \`(.+)\`$ ]]; then
+      current_identity="${BASH_REMATCH[1]}"
+    elif [[ "${line}" =~ ^-\ \`selection_reason\`:\ \`(.+)\`$ ]]; then
+      current_selection_reason="${BASH_REMATCH[1]}"
+    elif [[ "${line}" =~ ^-\ \`role_evidence\`:\ \`(.+)\`$ ]]; then
+      current_role_evidence="${BASH_REMATCH[1]}"
+    elif [[ "${line}" =~ ^-\ \`name_evidence\`:\ \`(.+)\`$ ]]; then
+      current_name_evidence="${BASH_REMATCH[1]}"
+    elif [[ "${line}" =~ ^-\ \`prototype_evidence\`:\ \`(.+)\`$ ]]; then
+      current_prototype_evidence="${BASH_REMATCH[1]}"
+    elif [[ "${line}" =~ ^-\ \`confidence\`:\ \`(.+)\`$ ]]; then
+      current_confidence="${BASH_REMATCH[1]}"
+    elif [[ "${line}" =~ ^-\ \`open_questions\`:\ \`(.+)\`$ ]]; then
+      current_open_questions="${BASH_REMATCH[1]}"
+    elif [[ "${line}" == '```c' ]]; then
+      in_code=1
+    fi
+  done < "${decomp_md}"
+
+  if [[ -n "${current_name}" ]]; then
+    if ! is_placeholder_decompilation "${current_code%$'\n'}"; then
+      wrote_real_code=1
+    fi
+    write_materialized_function_artifacts \
+      "${iteration_id}" \
+      "${current_order}" \
+      "${current_name}" \
+      "${current_identity}" \
+      "${current_selection_reason}" \
+      "${current_role_evidence}" \
+      "${current_name_evidence}" \
+      "${current_prototype_evidence}" \
+      "${current_confidence}" \
+      "${current_open_questions}" \
+      "${current_code%$'\n'}" \
+      "${recon_root}"
+    wrote_any=1
+  fi
+
+  if (( ! wrote_any )); then
+    printf 'Selected decompilation export did not contain any materializable function sections: %s\n' "${decomp_md}" >&2
+    return 1
+  fi
+  if (( ! wrote_real_code )); then
+    printf 'Selected decompilation only exported unavailable placeholders: %s\n' "${decomp_md}" >&2
+    return 1
+  fi
+
+  refresh_reconstruction_scaffold "${recon_root}"
+  refresh_reconstruction_cmake "${recon_root}"
 }
 
 resolve_runtime_java_home() {
@@ -343,23 +1044,91 @@ check_report_failed_count() {
 }
 
 check_baseline_artifacts() {
-  local base="${ARTIFACTS_DIR}"
-  require_file "${base}/function-names.yaml" "Baseline export must emit observed functions." || return 1
-  require_file "${base}/imports-and-libraries.yaml" "Baseline export must emit import evidence." || return 1
-  require_file "${base}/strings-and-constants.yaml" "Baseline export must emit string evidence." || return 1
-  require_file "${base}/types-and-structs.yaml" "Baseline export must emit type evidence." || return 1
-  require_file "${base}/xrefs-and-callgraph.yaml" "Baseline export must emit xref evidence." || return 1
-  require_file "${base}/decompiled-output.yaml" "Baseline export must emit the blocked decompilation placeholder." || return 1
+  local base="${1:-${ARTIFACTS_DIR}}"
+  require_file "${base}/function-names.md" "Baseline export must emit observed functions." || return 1
+  require_file "${base}/imports-and-libraries.md" "Baseline export must emit import evidence." || return 1
+  require_file "${base}/strings-and-constants.md" "Baseline export must emit string evidence." || return 1
+  require_file "${base}/types-and-structs.md" "Baseline export must emit type evidence." || return 1
+  require_file "${base}/xrefs-and-callgraph.md" "Baseline export must emit xref evidence." || return 1
+  require_file "${base}/decompiled-output.md" "Baseline export must emit the blocked decompilation placeholder." || return 1
   require_file "${base}/renaming-log.md" "Baseline export must emit the reviewable rename schema." || return 1
   require_file "${base}/signature-log.md" "Baseline export must emit the reviewable signature schema." || return 1
-  if command -v yq &>/dev/null; then
-    local fn_len
-    fn_len=$(yq -r '.functions | length' "${base}/decompiled-output.yaml" 2>/dev/null || echo "-1")
-    if [[ "$fn_len" != "0" ]]; then
-      printf 'Baseline decompiled-output.yaml must have empty functions array: %s\n' "${base}/decompiled-output.yaml" >&2
-      return 1
-    fi
+  if ! rg -n 'Decompiled bodies are intentionally blocked in this stage\.' "${base}/decompiled-output.md" >/dev/null 2>&1; then
+    printf 'Baseline decompiled-output.md must retain the blocked placeholder text: %s\n' "${base}/decompiled-output.md" >&2
+    return 1
   fi
+}
+
+snapshot_baseline_artifacts() {
+  local snapshot_dir="${ARTIFACTS_DIR}/baseline"
+  local name=""
+
+  rm -rf "${snapshot_dir}"
+  mkdir -p "${snapshot_dir}"
+  for name in \
+    function-names.md \
+    imports-and-libraries.md \
+    strings-and-constants.md \
+    types-and-structs.md \
+    xrefs-and-callgraph.md \
+    renaming-log.md \
+    signature-log.md; do
+    if [[ -f "${ARTIFACTS_DIR}/${name}" ]]; then
+      cp -f "${ARTIFACTS_DIR}/${name}" "${snapshot_dir}/${name}"
+    fi
+  done
+
+  if [[ -f "${ARTIFACTS_DIR}/decompiled-output.md" ]] && \
+     rg -n 'Decompiled bodies are intentionally blocked in this stage\.' "${ARTIFACTS_DIR}/decompiled-output.md" >/dev/null 2>&1; then
+    cp -f "${ARTIFACTS_DIR}/decompiled-output.md" "${snapshot_dir}/decompiled-output.md"
+  else
+    cat > "${snapshot_dir}/decompiled-output.md" <<EOF
+# Decompiled Output
+
+- Target ID: \`${TARGET_ID}\`
+- Program: \`${PROGRAM_NAME}\`
+- Generated by: \`ExportAnalysisArtifacts.java\`
+
+## Status
+
+- Stage: \`Baseline Evidence\`
+- Decompiled bodies are intentionally blocked in this stage.
+- Next step: complete \`Evidence Review\`, \`Target Selection\`, and \`Source Comparison\` before \`Selected Decompilation\`.
+
+## Required Entry Fields
+
+| Field | Required |
+| --- | --- |
+| \`function_identity\` | Yes |
+| \`outer_to_inner_order\` | Yes |
+| \`selection_reason\` | Yes |
+| \`role_evidence\` | Yes |
+| \`name_evidence\` | Yes |
+| \`prototype_evidence\` | Yes |
+| \`confidence\` | Yes |
+| \`open_questions\` | Yes |
+
+## Selected Decompilation Prerequisites
+
+1. Record a \`selection_reason\`.
+2. Record \`role_evidence\`, \`name_evidence\`, and \`prototype_evidence\`.
+3. Confirm the function is part of the current outside-in traversal.
+EOF
+  fi
+}
+
+ensure_baseline_snapshot() {
+  if [[ -f "${ARTIFACTS_DIR}/baseline/decompiled-output.md" ]] && \
+     [[ -f "${ARTIFACTS_DIR}/baseline/function-names.md" ]] && \
+     [[ -f "${ARTIFACTS_DIR}/baseline/imports-and-libraries.md" ]] && \
+     [[ -f "${ARTIFACTS_DIR}/baseline/strings-and-constants.md" ]] && \
+     [[ -f "${ARTIFACTS_DIR}/baseline/types-and-structs.md" ]] && \
+     [[ -f "${ARTIFACTS_DIR}/baseline/xrefs-and-callgraph.md" ]] && \
+     [[ -f "${ARTIFACTS_DIR}/baseline/renaming-log.md" ]] && \
+     [[ -f "${ARTIFACTS_DIR}/baseline/signature-log.md" ]]; then
+    return 0
+  fi
+  snapshot_baseline_artifacts
 }
 
 check_decompile_artifacts() {
@@ -406,16 +1175,16 @@ run_checked_action() {
 
   case "${action_name}" in
     baseline)
-      check_baseline_artifacts || validation_status=$?
+      check_baseline_artifacts "${ARTIFACTS_DIR}" || validation_status=$?
       ;;
     call-graph)
-      check_export_artifact "${ARTIFACTS_DIR}/call-graph-detail.yaml" "Detailed call graph export" || validation_status=$?
+      check_export_artifact "${ARTIFACTS_DIR}/call-graph-detail.md" "Detailed call graph export" || validation_status=$?
       ;;
     review-evidence)
-      check_export_artifact "${ARTIFACTS_DIR}/evidence-candidates.yaml" "Evidence review" || validation_status=$?
+      check_export_artifact "${ARTIFACTS_DIR}/evidence-candidates.md" "Evidence review" || validation_status=$?
       ;;
     target-selection)
-      check_export_artifact "${ARTIFACTS_DIR}/target-selection.yaml" "Target selection" || validation_status=$?
+      check_export_artifact "${ARTIFACTS_DIR}/target-selection.md" "Target selection" || validation_status=$?
       ;;
     decompile-selected)
       check_decompile_artifacts || validation_status=$?
@@ -448,6 +1217,7 @@ run_checked_action() {
 
 ACTION="plan-baseline"
 BINARY_PATH=""
+CAPTURE_BINARY_PATH=""
 TARGET_ID=""
 WORKSPACE_ROOT_ARG="${GHIDRA_WORKSPACE_ROOT:-}"
 PROJECT_ROOT=""
@@ -458,7 +1228,10 @@ RENAME_LOG=""
 SIGNATURE_LOG=""
 INSTALL_DIR=""
 PROJECT_SLUG=""
+ITERATION=""
+FUNCTION_ID=""
 EXTRA_ARGS=()
+RUNTIME_ARGS=()
 SELECTED_FUNCTIONS=()
 REVIEW_ARTIFACTS=()
 ARTIFACTS_DIR_EXPLICIT=0
@@ -471,6 +1244,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --binary)
       BINARY_PATH="${2:-}"
+      shift 2
+      ;;
+    --capture-binary)
+      CAPTURE_BINARY_PATH="${2:-}"
       shift 2
       ;;
     --target-id)
@@ -515,8 +1292,20 @@ while [[ $# -gt 0 ]]; do
       PROJECT_SLUG="${2:-}"
       shift 2
       ;;
+    --iteration)
+      ITERATION="${2:-}"
+      shift 2
+      ;;
+    --function)
+      FUNCTION_ID="${2:-}"
+      shift 2
+      ;;
     --selected-function)
       SELECTED_FUNCTIONS+=("${2:-}")
+      shift 2
+      ;;
+    --runtime-arg)
+      RUNTIME_ARGS+=("${2:-}")
       shift 2
       ;;
     --extra-arg)
@@ -683,7 +1472,7 @@ Required follow-up:
 EOF
     exit 0
     ;;
-  plan-baseline|baseline|plan-call-graph|call-graph|plan-review-evidence|review-evidence|plan-target-selection|target-selection|plan-decompile|decompile-selected|plan-apply-renames|apply-renames|plan-verify-renames|verify-renames|plan-apply-signatures|apply-signatures|plan-verify-signatures|verify-signatures|plan-lint-review-artifacts|lint-review-artifacts)
+  plan-baseline|baseline|plan-call-graph|call-graph|plan-review-evidence|review-evidence|plan-target-selection|target-selection|plan-decompile|decompile-selected|plan-apply-renames|apply-renames|plan-verify-renames|verify-renames|plan-apply-signatures|apply-signatures|plan-verify-signatures|verify-signatures|verify-io|plan-lint-review-artifacts|lint-review-artifacts)
     if [[ -z "${BINARY_PATH}" ]]; then
       fail_missing_binary
     fi
@@ -698,6 +1487,11 @@ EOF
     exit 1
     ;;
 esac
+
+if [[ -n "${CAPTURE_BINARY_PATH}" && ! -f "${CAPTURE_BINARY_PATH}" ]]; then
+  printf 'Capture binary not found: %s\n' "${CAPTURE_BINARY_PATH}" >&2
+  exit 1
+fi
 
 if [[ "${ACTION}" == "plan-decompile" || "${ACTION}" == "decompile-selected" ]]; then
   if [[ ${#SELECTED_FUNCTIONS[@]} -eq 0 ]]; then
@@ -717,7 +1511,12 @@ if [[ "${ACTION}" == "apply-signatures" || "${ACTION}" == "verify-signatures" ]]
   fi
 fi
 
-if [[ -n "${INSTALL_DIR}" ]]; then
+if [[ "${ACTION}" == "verify-io" ]]; then
+  if [[ -z "${ITERATION}" || -z "${FUNCTION_ID}" ]]; then
+    fail_missing_verify_target
+  fi
+  ANALYZE_HEADLESS=""
+elif [[ -n "${INSTALL_DIR}" ]]; then
   ANALYZE_HEADLESS="$("${SCRIPT_DIR}/discover-ghidra.sh" --install-dir "${INSTALL_DIR}" --print-analyze-headless)"
 else
   ANALYZE_HEADLESS="$("${SCRIPT_DIR}/discover-ghidra.sh" --print-analyze-headless)"
@@ -731,8 +1530,11 @@ fi
 # Build a headless command with common base arguments.
 # Usage: build_headless_command "import|process" "post_script_args..."
 build_headless_command() {
-  local mode="$1"; shift
-  local -a cmd=(
+  local out_ref="$1"
+  local mode="$2"
+  shift 2
+  local -n cmd="$out_ref"
+  cmd=(
     "${ANALYZE_HEADLESS}"
     "${PROJECT_ROOT}"
     "${TARGET_ID}"
@@ -745,7 +1547,6 @@ build_headless_command() {
   cmd+=(-analysisTimeoutPerFile 86400)
   cmd+=(-scriptPath "$(dirname "${SCRIPT_PATH}")")
   cmd+=(-postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" "$@")
-  printf '%s\n' "${cmd[@]}"
 }
 
 add_logging() {
@@ -768,16 +1569,16 @@ COMMAND_VAR[verify-signatures]="VERIFY_SIGNATURES_COMMAND"
 COMMAND_VAR[lint-review-artifacts]="LINT_REVIEW_ARTIFACTS_COMMAND"
 
 # Build commands from templates
-read -ra BASELINE_COMMAND <<<"$(build_headless_command import baseline)"
-read -ra DECOMPILE_COMMAND <<<"$(build_headless_command process decompile)"
-read -ra REVIEW_EVIDENCE_COMMAND <<<"$(build_headless_command process)"
-read -ra TARGET_SELECTION_COMMAND <<<"$(build_headless_command process)"
-read -ra CALL_GRAPH_COMMAND <<<"$(build_headless_command process)"
-read -ra APPLY_RENAMES_COMMAND <<<"$(build_headless_command process "${RENAME_LOG}")"
-read -ra VERIFY_RENAMES_COMMAND <<<"$(build_headless_command process "${RENAME_LOG}")"
-read -ra APPLY_SIGNATURES_COMMAND <<<"$(build_headless_command process "${SIGNATURE_LOG}")"
-read -ra VERIFY_SIGNATURES_COMMAND <<<"$(build_headless_command process "${SIGNATURE_LOG}")"
-read -ra LINT_REVIEW_ARTIFACTS_COMMAND <<<"$(build_headless_command process)"
+build_headless_command BASELINE_COMMAND import baseline
+build_headless_command DECOMPILE_COMMAND process decompile
+build_headless_command REVIEW_EVIDENCE_COMMAND process
+build_headless_command TARGET_SELECTION_COMMAND process
+build_headless_command CALL_GRAPH_COMMAND process
+build_headless_command APPLY_RENAMES_COMMAND process "${RENAME_LOG}"
+build_headless_command VERIFY_RENAMES_COMMAND process "${RENAME_LOG}"
+build_headless_command APPLY_SIGNATURES_COMMAND process "${SIGNATURE_LOG}"
+build_headless_command VERIFY_SIGNATURES_COMMAND process "${SIGNATURE_LOG}"
+build_headless_command LINT_REVIEW_ARTIFACTS_COMMAND process
 
 if [[ ${#SELECTED_FUNCTIONS[@]} -gt 0 ]]; then
   DECOMPILE_COMMAND+=("${SELECTED_FUNCTIONS[@]}")
@@ -791,9 +1592,8 @@ if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
               APPLY_RENAMES_COMMAND VERIFY_RENAMES_COMMAND \
               APPLY_SIGNATURES_COMMAND VERIFY_SIGNATURES_COMMAND \
               LINT_REVIEW_ARTIFACTS_COMMAND; do
-    read -ra tmp <<<"${!var}"
-    tmp+=("${EXTRA_ARGS[@]}")
-    declare -a "$var"='("${tmp[@]}")'
+    declare -n cmd_ref="$var"
+    cmd_ref+=("${EXTRA_ARGS[@]}")
   done
 fi
 
@@ -833,8 +1633,19 @@ EOF
 
 execute_action() {
   local action="$1"
+  local var_name="${COMMAND_VAR[$action]}"
+  local -n cmd_ref="$var_name"
   mkdir -p "${PROJECT_ROOT}" "${ARTIFACTS_DIR}" "${LOG_DIR}"
-  run_checked_action "$action" "${!COMMAND_VAR[$action]}"
+  if [[ "${action}" == "decompile-selected" ]]; then
+    ensure_baseline_snapshot
+  fi
+  run_checked_action "$action" "${cmd_ref[@]}"
+  if [[ "${action}" == "baseline" ]]; then
+    snapshot_baseline_artifacts
+  fi
+  if [[ "${action}" == "decompile-selected" ]]; then
+    materialize_selected_decompilation
+  fi
 }
 
 case "${ACTION}" in
@@ -849,27 +1660,27 @@ case "${ACTION}" in
     execute_action baseline
     ;;
   plan-call-graph)
-    plan_output call-graph "CALL_GRAPH_DETAIL=${ARTIFACTS_DIR}/call-graph-detail.yaml" \
+    plan_output call-graph "CALL_GRAPH_DETAIL=${ARTIFACTS_DIR}/call-graph-detail.md" \
       "This action is for \`Baseline Evidence Follow-Up\`." \
       "It exports focused caller/callee detail without mutating program metadata." \
-      "Use it when \`xrefs-and-callgraph.yaml\` is too coarse for outside-in target selection."
+      "Use it when \`xrefs-and-callgraph.md\` is too coarse for outside-in target selection."
     exit 0
     ;;
   call-graph)
     execute_action call-graph
     ;;
   plan-review-evidence)
-    plan_output review-evidence "EVIDENCE_CANDIDATES=${ARTIFACTS_DIR}/evidence-candidates.yaml" \
+    plan_output review-evidence "EVIDENCE_CANDIDATES=${ARTIFACTS_DIR}/evidence-candidates.md" \
       "This action is for \`Evidence Review\`." \
       "It exports a reviewable candidate surface without mutating program metadata." \
-      "Keep metric-style fields secondary and confirm frontier eligibility before promoting any row into \`target-selection.yaml\`."
+      "Keep metric-style fields secondary and confirm frontier eligibility before promoting any row into \`target-selection.md\`."
     exit 0
     ;;
   review-evidence)
     execute_action review-evidence
     ;;
   plan-target-selection)
-    plan_output target-selection "TARGET_SELECTION=${ARTIFACTS_DIR}/target-selection.yaml" \
+    plan_output target-selection "TARGET_SELECTION=${ARTIFACTS_DIR}/target-selection.md" \
       "This action is for \`Target Selection\`." \
       "It exports a reviewable selection surface with one automatic default target." \
       "Confirm the frontier basis and matched-only gate before moving inward."
@@ -882,6 +1693,7 @@ case "${ACTION}" in
     plan_output decompile-selected "SELECTED_FUNCTIONS=$(printf '%q ' "${SELECTED_FUNCTIONS[@]}")" \
       "This action is for \`Selected Decompilation\` only." \
       "Record selection rationale and role/name/prototype evidence before running it." \
+      "A successful run also materializes a minimal per-function handoff under \`iterations/<NNN>/functions/\` and initializes reconstruction scaffolding if needed." \
       "Preserve outside-in order when choosing the selected functions."
     exit 0
     ;;
@@ -927,6 +1739,27 @@ case "${ACTION}" in
     ;;
   verify-signatures)
     execute_action verify-signatures
+    ;;
+  verify-io)
+    mkdir -p "${ARTIFACTS_DIR}" "${LOG_DIR}"
+    VERIFY_IO_PYTHON="$(select_verify_io_python)"
+    verify_io_cmd=(
+      "${VERIFY_IO_PYTHON}" "${SCRIPT_DIR}/verify-frida-io.py"
+      --artifact-root "${ARTIFACTS_DIR}"
+      --iteration "${ITERATION}"
+      --function "${FUNCTION_ID}"
+      --binary "${BINARY_PATH}"
+    )
+    if [[ -n "${CAPTURE_BINARY_PATH}" ]]; then
+      verify_io_cmd+=(--capture-binary "${CAPTURE_BINARY_PATH}")
+    fi
+    if [[ ${#RUNTIME_ARGS[@]} -gt 0 ]]; then
+      for runtime_arg in "${RUNTIME_ARGS[@]}"; do
+        verify_io_cmd+=(--runtime-arg "${runtime_arg}")
+      done
+    fi
+    print_running_command "${verify_io_cmd[@]}"
+    "${verify_io_cmd[@]}"
     ;;
   plan-lint-review-artifacts)
     plan_output lint-review-artifacts "" \

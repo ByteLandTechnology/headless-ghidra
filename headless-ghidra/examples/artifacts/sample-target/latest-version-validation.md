@@ -33,7 +33,7 @@ placeholders shown in each command block.
   - the Java-only workflow completed `baseline`, `review-evidence`,
     `target-selection`, `apply-renames`, `verify-renames`,
     `apply-signatures`, `verify-signatures`, `lint-review-artifacts`, and
-    `decompile-selected` against `/bin/ls`
+    `decompile-selected` against the reviewed mock `ls` verification binary
   - malformed `signature-log.md` input still produced reviewable
     `signature-apply-report.md` and `artifact-lint-report.md` before the
     wrapper returned non-zero
@@ -70,9 +70,9 @@ placeholders shown in each command block.
     successfully through Headless Ghidra and emitted runtime artifacts under
     `.work/ghidra-artifacts/sample-target--archive-main-o/`
   - a second sequential local replay completed `baseline`, `review-evidence`,
-    and `target-selection` for `/bin/ls` under
+    and `target-selection` for the mock `ls` verification binary under
     `.work/ghidra-artifacts/sample-target-replay/`
-  - that `/bin/ls` replay treated successful headless execution of
+  - that mock `ls` replay treated successful headless execution of
     `ReviewEvidenceCandidates.java` and `PlanTargetSelection.java` as compile
     and execution validation for the updated Java-script review surfaces
   - one parallel `target-selection` attempt failed only because Ghidra locked
@@ -166,7 +166,7 @@ Observed result:
   `target-selection` for `sample-target--archive-main-o`
 - runtime `evidence-candidates.md` and `target-selection.md` were emitted
   under `.work/ghidra-artifacts/sample-target--archive-main-o/`
-- sequential `/bin/ls` replay completed `baseline`, `review-evidence`, and
+- sequential mock `ls` replay completed `baseline`, `review-evidence`, and
   `target-selection` for target id `sample-target-replay`
 - runtime `evidence-candidates.md` and `target-selection.md` were emitted
   under `.work/ghidra-artifacts/sample-target-replay/`
@@ -219,7 +219,7 @@ Reference replay commands:
 export WORKSPACE_ROOT=$PWD
 export SKILL_ROOT=/path/to/installed/headless-ghidra
 export GHIDRA_INSTALL_DIR=/path/to/ghidra
-export TARGET_BINARY=/bin/ls
+export TARGET_BINARY=$WORKSPACE_ROOT/.work/verification/mock-ls/build/ls
 export TARGET_ID=sample-target
 export ARTIFACT_ROOT=$WORKSPACE_ROOT/.work/ghidra-artifacts/$TARGET_ID
 

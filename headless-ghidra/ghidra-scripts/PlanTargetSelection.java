@@ -34,6 +34,7 @@ public class PlanTargetSelection extends GhidraScript {
         String entry;
         String currentSignature;
         String candidateKind;
+        boolean importedThunk;
         boolean namedContext;
         int incomingRefs;
         long bodySize;
@@ -162,6 +163,14 @@ public class PlanTargetSelection extends GhidraScript {
             + " | calling=" + function.getCallingConventionName();
     }
 
+    private boolean isImportedThunk(Function function) {
+        if (!function.isThunk()) {
+            return false;
+        }
+        Function thunkedFunction = function.getThunkedFunction(false);
+        return thunkedFunction != null && thunkedFunction.isExternal();
+    }
+
     private List<TargetRow> collectRows(int maxTargets) {
         List<TargetRow> rows = new ArrayList<>();
         FunctionManager functionManager = currentProgram.getFunctionManager();
@@ -173,15 +182,20 @@ public class PlanTargetSelection extends GhidraScript {
             row.entry = function.getEntryPoint().toString();
             row.selector = function.getName() + "@" + function.getEntryPoint().toString();
             row.currentSignature = describeFunctionSignature(function);
-            row.candidateKind = function.isThunk() ? "thunk" : "substantive_body";
+            row.importedThunk = isImportedThunk(function);
+            row.candidateKind = row.importedThunk ? "import_thunk"
+                : (function.isThunk() ? "thunk" : "substantive_body");
             row.namedContext = !hasDefaultFunctionName(function);
             row.incomingRefs = countIncomingRefs(function);
             row.bodySize = function.getBody().getNumAddresses();
             row.frontierEligibility = "deferred";
             row.frontierBasis = "child_of_matched_boundary";
             row.verifiedParentBoundary = "pending_matched_boundary_review";
-            row.relationshipType = function.isThunk() ? "wrapper_edge" : "callee";
-            if (function.isThunk()) {
+            row.relationshipType = (function.isThunk() || row.importedThunk) ? "wrapper_edge" : "callee";
+            if (row.importedThunk) {
+                row.triggeringEvidence =
+                    "external_import_thunk; defer this row until a substantive internal boundary is unavailable or explicitly required";
+            } else if (function.isThunk()) {
                 row.triggeringEvidence = "helper boundary candidate; confirm whether this thunk or wrapper is the current frontier";
             } else if (row.namedContext) {
                 row.triggeringEvidence = "existing_name_context; confirm whether this row is outermost or a child of a matched boundary";
@@ -196,6 +210,9 @@ public class PlanTargetSelection extends GhidraScript {
         Collections.sort(rows, new Comparator<TargetRow>() {
             @Override
             public int compare(TargetRow left, TargetRow right) {
+                if (left.importedThunk != right.importedThunk) {
+                    return left.importedThunk ? 1 : -1;
+                }
                 boolean leftHelper = "thunk".equals(left.candidateKind);
                 boolean rightHelper = "thunk".equals(right.candidateKind);
                 if (leftHelper != rightHelper) {
@@ -212,33 +229,46 @@ public class PlanTargetSelection extends GhidraScript {
             rows = new ArrayList<>(rows.subList(0, maxTargets));
         }
 
+        int defaultIndex = 0;
+        for (int i = 0; i < rows.size(); i++) {
+            if (!rows.get(i).importedThunk) {
+                defaultIndex = i;
+                break;
+            }
+        }
+
         for (int i = 0; i < rows.size(); i++) {
             TargetRow row = rows.get(i);
-            row.autoDefault = i == 0 ? "yes" : "";
-            row.frontierEligibility = i == 0 ? "eligible" : "deferred";
-            row.frontierBasis = i == 0 ? "outermost_anchor" : "child_of_matched_boundary";
-            row.verifiedParentBoundary = i == 0 ? "none" : "pending_matched_boundary_review";
-            row.relationshipType = i == 0
-                ? ("thunk".equals(row.candidateKind) ? "wrapper_edge" : "entry_adjacent")
-                : ("thunk".equals(row.candidateKind) ? "wrapper_edge" : "callee");
-            if (i == 0 && !"thunk".equals(row.candidateKind)) {
+            boolean isDefault = i == defaultIndex;
+            row.autoDefault = isDefault ? "yes" : "";
+            row.frontierEligibility = isDefault ? "eligible" : "deferred";
+            row.frontierBasis = isDefault ? "outermost_anchor" : "child_of_matched_boundary";
+            row.verifiedParentBoundary = isDefault ? "none" : "pending_matched_boundary_review";
+            row.relationshipType = isDefault
+                ? ("thunk".equals(row.candidateKind) || row.importedThunk ? "wrapper_edge" : "entry_adjacent")
+                : ("thunk".equals(row.candidateKind) || row.importedThunk ? "wrapper_edge" : "callee");
+            if (isDefault && !"thunk".equals(row.candidateKind) && !row.importedThunk) {
                 row.candidateKind = "outer_anchor";
             }
-            row.selectionReason = i == 0
+            row.selectionReason = isDefault
                 ? "auto_default; review whether this row is the current outermost anchor or helper boundary before deeper work"
                 : "deferred until the current boundary is matched and this row has a reviewed parent boundary";
-            row.frontierReason = i == 0
-                ? "current outermost anchor candidate; confirm with reviewed evidence before moving inward"
+            row.frontierReason = isDefault
+                ? (row.importedThunk
+                    ? "fallback imported thunk candidate; confirm no substantive internal boundary is available before moving inward"
+                    : "current outermost anchor candidate; confirm with reviewed evidence before moving inward")
                 : "deeper row deferred until a matched parent boundary is recorded";
-            row.questionToAnswer = i == 0
+            row.questionToAnswer = isDefault
                 ? "does this frontier row define the next safe outside-in reconstruction boundary?"
                 : "which matched parent boundary would authorize this deeper row?";
-            row.tieBreakRationale = i == 0
-                ? "helper rows first, then existing name context, then stable address order"
+            row.tieBreakRationale = isDefault
+                ? (row.importedThunk
+                    ? "fallback_after_substantive_internal_rows"
+                    : "helper rows first, then existing name context, then stable address order")
                 : "deferred_after_default";
             row.deviationReason = "";
             row.deviationRisk = "";
-            row.status = i == 0 ? "ready" : "blocked";
+            row.status = isDefault ? "ready" : "blocked";
         }
         return rows;
     }
@@ -259,6 +289,7 @@ public class PlanTargetSelection extends GhidraScript {
         sb.append("## Selection Gate\n\n");
         sb.append("- Only outermost anchors are eligible before any boundary is `matched`.\n");
         sb.append("- Only children of a `matched` boundary become eligible for deeper work.\n");
+        sb.append("- Imported thunks are fallback-only defaults; prefer substantive internal boundaries when any are available.\n");
         sb.append("- Document any `deviation_reason` and `deviation_risk` before breaking the default frontier order.\n");
         sb.append("- Keep incoming refs and body size visible only as secondary context.\n\n");
 

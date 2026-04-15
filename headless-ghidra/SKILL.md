@@ -32,9 +32,9 @@ headless-ghidra                       ← this skill (orchestrator)
 | # | Skill | Phase | Responsibility |
 |---|---|---|---|
 | 1 | [`headless-ghidra-intake`](../headless-ghidra-intake/SKILL.md) | P0 | Target identity, workspace creation, Ghidra discovery, archive normalization |
-| 2 | [`headless-ghidra-baseline`](../headless-ghidra-baseline/SKILL.md) | P1 | Ghidra headless auto-analysis, baseline evidence export (6 YAML files) |
-| 3 | [`headless-ghidra-evidence`](../headless-ghidra-evidence/SKILL.md) | P2 | Four-dimension evidence review (parallel), third-party library identification, anchor synthesis, optional Frida |
-| 4 | [`headless-ghidra-discovery`](../headless-ghidra-discovery/SKILL.md) | P3 | Analyze verified boundaries + baseline evidence → output next frontier batch |
+| 2 | [`headless-ghidra-baseline`](../headless-ghidra-baseline/SKILL.md) | P1 | Ghidra headless auto-analysis, baseline Markdown export, and blocked decompilation placeholder validation |
+| 3 | [`headless-ghidra-evidence`](../headless-ghidra-evidence/SKILL.md) | P2 | Frontier evidence review into `evidence-candidates.md`, with optional Frida supplementation |
+| 4 | [`headless-ghidra-discovery`](../headless-ghidra-discovery/SKILL.md) | P3 | Analyze verified boundaries + evidence review and record the next automatic default in `target-selection.md` |
 | 5 | [`headless-ghidra-batch-decompile`](../headless-ghidra-batch-decompile/SKILL.md) | P4+P5 | Function-level parallel: source comparison → semantic reconstruction → decompilation (Ghidra operations queued) |
 | 6 | [`headless-ghidra-frida-verify`](../headless-ghidra-frida-verify/SKILL.md) | P6 | Function-level parallel Frida I/O verification, results serve as gate |
 
@@ -50,7 +50,7 @@ flowchart TD
     P2 --> P3
 
     subgraph loop["Iteration Loop"]
-        P3["P3 Discovery"] -->|"batch-manifest.yaml"| P4P5
+        P3["P3 Discovery"] -->|"target-selection.md"| P4P5
 
         subgraph P4P5["P4+P5 Batch Processing ⚡ fn-parallel"]
             fn_A_d["fn_A: compare → rebuild → decompile"]
@@ -96,6 +96,9 @@ The orchestrator calls `gate-check.sh` at each phase transition:
 scripts/gate-check.sh --gate P0 --artifact-root <path>
 scripts/gate-check.sh --gate P1 --artifact-root <path>
 scripts/gate-check.sh --gate P2 --artifact-root <path>
+scripts/gate-check.sh --gate P3 --artifact-root <path>
+
+# Legacy P3 fallback for older iteration manifests
 scripts/gate-check.sh --gate P3 --artifact-root <path> --iteration 001
 
 # Function-level gates
@@ -140,7 +143,7 @@ The orchestrator uses dialogs for user interaction in these scenarios:
 
 - ⛔ **Must not execute any Frida commands**
 - ⛔ **Must not write reconstruction code**
-- ⛔ **Must not modify any artifacts under `baseline/`, `evidence/`, `iterations/` directly via shell (use YAML tools or state updates)**
+- ⛔ **Must not modify any runtime artifacts under the root-level P1/P2 Markdown surfaces or `iterations/` directly via shell (use the sanctioned scripts or state updates)**
 - ⛔ **Must not accept external disassembly or decompilation as a substitute for Ghidra**. Commands such as `objdump`, `otool`, `llvm-objdump`, `nm`, `readelf`, `gdb`, `lldb`, and `radare2` may not be used to generate or justify `decompiled-output/` for P5.
 - ⛔ **Must halt or reject a worker plan that bypasses `run-headless-analysis.sh --action decompile-selected` for Selected Decompilation**
 
@@ -230,8 +233,9 @@ All artifacts are relative to `.work/ghidra-artifacts/<target-id>/`:
 | Phase | Path Prefix |
 |---|---|
 | P0 | `intake/` |
-| P1 | `baseline/` |
-| P2 | `evidence/` |
+| P1 | root-level baseline Markdown files such as `function-names.md` and `decompiled-output.md` |
+| P2 | root-level review exports such as `evidence-candidates.md` |
+| P3 | root-level `target-selection.md` |
 | P3–P6 | `iterations/<NNN>/functions/<fn_id>/` |
 | Global | `pipeline-state.yaml` |
 
