@@ -1,0 +1,22 @@
+# Rust build output
+target/
+tmp/
+
+*.rs.bk
+*.rlib
+*.prof*
+*.log
+.env*
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+
+# Ghidra binary project files (large, machine-specific)
+targets/*/ghidra-projects/
+ghidra-projects/
+
+# cli-forge intermediate artifacts (pipeline contract files)
+.cli-forge/

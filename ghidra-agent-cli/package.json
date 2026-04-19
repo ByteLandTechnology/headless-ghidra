@@ -1,0 +1,27 @@
+{
+  "name": "cli-skill-release-harness",
+  "version": "0.0.0-development",
+  "private": true,
+  "description": "Release harness for the target CLI skill repository. Not published to npm.",
+  "type": "module",
+  "engines": {
+    "node": "^22.14.0 || >=24.10.0",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "release:dry-run": "npx --yes semantic-release --dry-run --no-ci",
+    "release:rehearse": "node scripts/release/rehearse.mjs",
+    "release:prepublish": "node scripts/release/prepublish.mjs"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/exec": "^7.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^12.0.0",
+    "@semantic-release/npm": "^13.0.1",
+    "@semantic-release/release-notes-generator": "^14.0.3",
+    "conventional-changelog-conventionalcommits": "^9.0.0",
+    "semantic-release": "^25.0.0"
+  }
+}

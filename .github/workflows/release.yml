@@ -1,0 +1,210 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      recover-version:
+        description: "Recover a wedged release: set to the version string (e.g. 1.2.3) to republish npm packages for an existing tag without running semantic-release."
+        required: false
+        default: ""
+      recover-run-id:
+        description: "Optional: the run ID of the original release attempt. If set, downloads the exact build artifacts from that run instead of rebuilding, preserving byte-for-byte identical checksums."
+        required: false
+        default: ""
+
+permissions:
+  actions: read
+  contents: write
+  id-token: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  release:
+    runs-on: macos-14
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.committer.name != 'github-actions[bot]'
+    defaults:
+      run:
+        working-directory: ghidra-agent-cli
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.recover-version != '' && format('refs/tags/v{0}', github.event.inputs.recover-version) || '' }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Read release config
+        id: cfg
+        run: |
+          set -euo pipefail
+          targets=$(node -e "const c=require('./release/config.json');console.log(c.targets.map(t=>t.rustTarget).join(','))")
+          cli=$(node -e "const c=require('./release/config.json');console.log(c.cliName)")
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "cli=$cli" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: ${{ steps.cfg.outputs.targets }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: ./.github/actions/setup-build-env
+
+      - name: Install release harness dependencies
+        run: npm ci
+
+      - name: Verify release config
+        run: node scripts/release/validate-config.mjs
+
+      - name: Rust quality gates
+        if: ${{ github.event.inputs.recover-version == '' }}
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test
+
+      - name: Download original build artifacts
+        if: ${{ github.event.inputs.recover-version != '' && github.event.inputs.recover-run-id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: ghidra-agent-cli/dist/
+          run-id: ${{ github.event.inputs.recover-run-id }}
+
+      - name: Resolve checked-out commit SHA
+        if: ${{ github.event.inputs.recover-version != '' && github.event.inputs.recover-run-id != '' }}
+        id: checkout-sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify artifact provenance
+        if: ${{ github.event.inputs.recover-version != '' && github.event.inputs.recover-run-id != '' }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const provPath = './dist/provenance.json';
+            if (!fs.existsSync(provPath)) {
+              console.log('No provenance.json found (artifacts predate provenance tracking). Skipping verification.');
+              process.exit(0);
+            }
+            const p = JSON.parse(fs.readFileSync(provPath, 'utf8'));
+            const expectedVersion = process.env.EXPECTED_VERSION;
+            const expectedSha = process.env.EXPECTED_SHA;
+            const expectedRepo = process.env.EXPECTED_REPO;
+            if (p.version !== expectedVersion) {
+              console.error('Artifact version ' + p.version + ' does not match requested ' + expectedVersion + '.');
+              process.exit(1);
+            }
+            if (p.commitSha && p.commitSha !== expectedSha) {
+              console.error('Artifact commit ' + p.commitSha + ' does not match checkout ' + expectedSha + '.');
+              console.error('The downloaded artifacts come from a different commit. Check recover-run-id.');
+              process.exit(1);
+            }
+            if (p.repository && p.repository !== expectedRepo) {
+              console.error('Artifact repository ' + p.repository + ' does not match ' + expectedRepo + '.');
+              process.exit(1);
+            }
+            console.log('Provenance OK: v' + p.version + ' @ ' + (p.commitSha || 'unknown'));
+          "
+        env:
+          EXPECTED_VERSION: ${{ github.event.inputs.recover-version }}
+          EXPECTED_SHA: ${{ steps.checkout-sha.outputs.sha }}
+          EXPECTED_REPO: ${{ github.repository }}
+
+      - name: Build release binaries
+        if: ${{ github.event.inputs.recover-version != '' && github.event.inputs.recover-run-id == '' }}
+        run: |
+          echo "::warning::Rebuilding from source. Checksums may differ from originally published npm packages. Provide recover-run-id for exact match."
+          node scripts/release/build-binaries.mjs "${{ github.event.inputs.recover-version }}"
+
+      - name: Recover wedged release
+        if: ${{ github.event.inputs.recover-version != '' }}
+        run: |
+          set -euo pipefail
+          version="${{ github.event.inputs.recover-version }}"
+          # Block rebuild recovery if any npm packages already exist — prevents
+          # mixing binaries from different build attempts under the same version.
+          if [[ -z "${{ github.event.inputs.recover-run-id }}" ]]; then
+            echo "Checking if any npm packages or GitHub Release assets already exist for v${version}..."
+            # Check GitHub Release assets
+            if gh release view "v${version}" --json assets -q '.assets | length' 2>/dev/null | grep -qv '^0$'; then
+              echo "::error::GitHub Release v${version} already has assets. Rebuild would produce different binaries." >&2
+              echo "Provide recover-run-id to reuse the original build artifacts." >&2
+              exit 1
+            fi
+            # Check all npm packages
+            node --input-type=module -e "
+              import { spawnSync } from 'node:child_process';
+              import { buildAllPackageNames, readReleaseConfig } from './scripts/release/release-config.mjs';
+              const v = '${version}';
+              const names = buildAllPackageNames(readReleaseConfig(process.cwd()));
+              for (const name of names) {
+                const r = spawnSync('npm', ['view', name + '@' + v, 'version'], { encoding: 'utf8', stdio: 'pipe', shell: true });
+                if (r.status === 0) {
+                  console.error(name + '@' + v + ' already published.');
+                  console.error('Cannot rebuild for recovery — binary provenance would differ.');
+                  console.error('Provide recover-run-id to reuse the original build artifacts.');
+                  process.exit(1);
+                }
+              }
+              console.log('No existing packages or release assets found — safe to rebuild.');
+            "
+          fi
+          echo "Recovering npm packages for v${version}..."
+          node scripts/release/sync-platform-packages.mjs "$version"
+          node scripts/release/publish-npm-packages.mjs "$version"
+          echo "Ensuring GitHub Release exists and uploading missing assets..."
+          gh release view "v${version}" >/dev/null 2>&1 || gh release create "v${version}" --title "v${version}" --notes "Recovered release v${version}."
+          existing=$(gh release view "v${version}" --json assets -q '.assets[].name' 2>/dev/null || true)
+          upload_files=""
+          for f in dist/*.tar.gz dist/*.sha256 dist/provenance.json; do
+            [ -f "$f" ] || continue
+            bn=$(basename "$f")
+            if ! echo "$existing" | grep -qxF "$bn"; then
+              upload_files="$upload_files $f"
+            fi
+          done
+          if [ -n "$upload_files" ]; then
+            # shellcheck disable=SC2086
+            gh release upload "v${version}" $upload_files
+          else
+            echo "All assets already present on release v${version}, skipping upload."
+          fi
+          echo "Recovery complete."
+
+      - name: Run semantic-release
+        if: ${{ github.event.inputs.recover-version == '' }}
+        run: npx --yes semantic-release
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
+
+      - name: Preserve build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: ghidra-agent-cli/dist/
+          retention-days: 30

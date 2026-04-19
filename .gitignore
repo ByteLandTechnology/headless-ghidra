@@ -12,3 +12,11 @@ node_modules/
 .work/
 __pycache__/
 *.py[cod]
+.lock/
+ghidra-agent-cli/.lock/
+ghidra-agent-cli/.git-local-backup/
+ghidra-agent-cli/.github/
+ghidra-agent-cli/node_modules/
+ghidra-agent-cli/target/
+ghidra-agent-cli/dist/
+ghidra-agent-cli/tmp/

@@ -1,0 +1,51 @@
+{
+  "cliName": "ghidra-agent-cli",
+  "mainPackageName": "ghidra-agent-cli",
+  "mainNpmScope": null,
+  "platformNpmScope": "cli-forge-bin",
+  "sourceRepository": "ByteLandTechnology/headless-ghidra",
+  "targets": [
+    {
+      "rustTarget": "aarch64-apple-darwin",
+      "os": "darwin",
+      "cpu": "arm64",
+      "packageSuffix": "darwin-arm64",
+      "runner": "macos-14"
+    },
+    {
+      "rustTarget": "x86_64-apple-darwin",
+      "os": "darwin",
+      "cpu": "x64",
+      "packageSuffix": "darwin-x64",
+      "runner": "macos-14"
+    },
+    {
+      "rustTarget": "aarch64-unknown-linux-musl",
+      "os": "linux",
+      "cpu": "arm64",
+      "packageSuffix": "linux-arm64",
+      "runner": "macos-14"
+    },
+    {
+      "rustTarget": "x86_64-unknown-linux-musl",
+      "os": "linux",
+      "cpu": "x64",
+      "packageSuffix": "linux-x64",
+      "runner": "macos-14"
+    },
+    {
+      "rustTarget": "aarch64-pc-windows-gnullvm",
+      "os": "win32",
+      "cpu": "arm64",
+      "packageSuffix": "win32-arm64",
+      "runner": "macos-14"
+    },
+    {
+      "rustTarget": "x86_64-pc-windows-gnullvm",
+      "os": "win32",
+      "cpu": "x64",
+      "packageSuffix": "win32-x64",
+      "runner": "macos-14"
+    }
+  ]
+}

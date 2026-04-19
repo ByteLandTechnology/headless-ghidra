@@ -1,0 +1,2 @@
+# Per-platform npm packages are generated here at release time by
+# scripts/release/sync-platform-packages.mjs. Do not hand-edit this directory.

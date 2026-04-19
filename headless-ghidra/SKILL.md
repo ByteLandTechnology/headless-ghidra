@@ -1,250 +1,109 @@
 ---
 name: "headless-ghidra"
-description: "Global orchestrator for the headless Ghidra end-to-end decompilation pipeline. Reads pipeline-state.yaml, dispatches sub-agents for each phase (P0–P6), executes programmatic gate checks, and manages user interaction via dialogs. Performs zero analysis work itself."
+description: "Global orchestrator for the headless Ghidra YAML-first decompilation pipeline. Reads artifacts/<target>/pipeline-state.yaml, dispatches P0–P6 phase skills, executes programmatic gate checks, and manages user interaction. Performs zero analysis work itself."
 ---
 
 # Headless Ghidra — Global Orchestrator
 
-This skill is the global orchestrator for the end-to-end decompilation pipeline.
-It performs **zero** analysis work itself — its sole responsibility is reading
-state, dispatching sub-agents, running gate checks, and managing user dialogs.
+This skill is the workflow authority for the repository. It defines the P0–P6
+sequence, dispatch rules, and artifact hand-off points. `ghidra-agent-cli`
+remains the tool authority for command syntax and YAML artifact semantics.
 
-## Role Definition
+## Required Shared Tool Contract
 
-| Property | Value |
-|---|---|
-| **Agent ID** | `orchestrator` |
-| **Instances** | 1 (globally unique) |
-| **Lifecycle** | Long-lived — from project start until all functions are verified |
+- `ghidra-agent-cli` is the mandatory shared interface for supported workspace,
+  metadata, Ghidra, Frida, progress, validation, and gate operations.
+- Phase skills must name the exact `ghidra-agent-cli` subcommands they use.
+- Lower-level shell scripts and Java helpers are backend details. They must not
+  replace the CLI as the primary interface when the CLI already supports the
+  action.
 
-## Sub-Skill Family
+## Pipeline
 
-```
-headless-ghidra                       ← this skill (orchestrator)
-├── headless-ghidra-intake            ← P0 target intake
-├── headless-ghidra-baseline          ← P1 baseline extraction
-├── headless-ghidra-evidence          ← P2 evidence review
-├── headless-ghidra-discovery         ← P3 batch discovery
-├── headless-ghidra-batch-decompile   ← P4+P5 batch decompilation
-└── headless-ghidra-frida-verify      ← P6 Frida I/O verification
+```text
+P0 Intake → P1 Baseline → P2 Evidence → [P3 Discovery → P4+P5 Decompile → P6 Verify]*
 ```
 
-| # | Skill | Phase | Responsibility |
+| Phase | Skill | Purpose | Primary outputs |
 |---|---|---|---|
-| 1 | [`headless-ghidra-intake`](../headless-ghidra-intake/SKILL.md) | P0 | Target identity, workspace creation, Ghidra discovery, archive normalization |
-| 2 | [`headless-ghidra-baseline`](../headless-ghidra-baseline/SKILL.md) | P1 | Ghidra headless auto-analysis, baseline Markdown export, and blocked decompilation placeholder validation |
-| 3 | [`headless-ghidra-evidence`](../headless-ghidra-evidence/SKILL.md) | P2 | Frontier evidence review into `evidence-candidates.md`, with optional Frida supplementation |
-| 4 | [`headless-ghidra-discovery`](../headless-ghidra-discovery/SKILL.md) | P3 | Analyze verified boundaries + evidence review and record the next automatic default in `target-selection.md` |
-| 5 | [`headless-ghidra-batch-decompile`](../headless-ghidra-batch-decompile/SKILL.md) | P4+P5 | Function-level parallel: source comparison → semantic reconstruction → decompilation (Ghidra operations queued) |
-| 6 | [`headless-ghidra-frida-verify`](../headless-ghidra-frida-verify/SKILL.md) | P6 | Function-level parallel Frida I/O verification, results serve as gate |
+| P0 | [`headless-ghidra-intake`](../headless-ghidra-intake/SKILL.md) | Initialize target workspace and discover runtime prerequisites | `pipeline-state.yaml`, `scope.yaml`, `targets/<id>/ghidra-projects/` |
+| P1 | [`headless-ghidra-baseline`](../headless-ghidra-baseline/SKILL.md) | Export baseline YAML metadata from Ghidra | `baseline/*.yaml` |
+| P2 | [`headless-ghidra-evidence`](../headless-ghidra-evidence/SKILL.md) | Review baseline evidence and third-party signals | `evidence-candidates.yaml`, `third-party/identified.yaml` |
+| P3 | [`headless-ghidra-discovery`](../headless-ghidra-discovery/SKILL.md) | Select the next frontier batch | `target-selection.yaml`, refreshed `next-batch.yaml` |
+| P4+P5 | [`headless-ghidra-batch-decompile`](../headless-ghidra-batch-decompile/SKILL.md) | Apply metadata, decompile, and record per-function outputs | `decompilation/functions/<fn_id>/decompilation-record.yaml` |
+| P6 | [`headless-ghidra-frida-verify`](../headless-ghidra-frida-verify/SKILL.md) | Record and compare runtime behavior | `decompilation/functions/<fn_id>/verification-result.yaml` |
 
-## Pipeline Overview
+## Shared Artifact Contract
 
-```mermaid
-flowchart TD
-    subgraph init["One-Time Initialization"]
-        P0["P0 Intake"] --> P1["P1 Baseline"]
-        P1 --> P2["P2 Evidence"]
-    end
+All phases work inside this repository-local layout:
 
-    P2 --> P3
+```text
+targets/<target-id>/ghidra-projects/
 
-    subgraph loop["Iteration Loop"]
-        P3["P3 Discovery"] -->|"target-selection.md"| P4P5
-
-        subgraph P4P5["P4+P5 Batch Processing ⚡ fn-parallel"]
-            fn_A_d["fn_A: compare → rebuild → decompile"]
-            fn_B_d["fn_B: compare → rebuild → decompile"]
-            fn_C_d["fn_C: compare → rebuild → decompile"]
-        end
-
-        P4P5 --> P6
-
-        subgraph P6["P6 Frida Verification ⚡ fn-parallel"]
-            fn_A_v["fn_A: hook → record → compare"]
-            fn_B_v["fn_B: hook → record → compare"]
-            fn_C_v["fn_C: hook → record → compare"]
-        end
-
-        P6 --> check{"All frontier verified?"}
-        check -->|No| P3
-    end
-
-    check -->|Yes| done["Done"]
+artifacts/<target-id>/
+├── pipeline-state.yaml
+├── scope.yaml
+├── intake/
+├── baseline/
+├── third-party/
+├── evidence-candidates.yaml
+├── target-selection.yaml
+├── decompilation/
+│   ├── progress.yaml
+│   ├── next-batch.yaml
+│   └── functions/<fn_id>/
+└── gates/
 ```
 
-## State Management
+The orchestrator treats `pipeline-state.yaml` as the current target-level state
+record and relies on the phase-owned YAML artifacts above for hand-offs.
 
-The orchestrator manages global state through `pipeline-state.yaml`, which is
-the single authoritative source of truth.
+## Orchestrator Responsibilities
 
-**Path**: `.work/ghidra-artifacts/<target-id>/pipeline-state.yaml`
+1. Detect or resume the active target.
+2. Read `artifacts/<target-id>/pipeline-state.yaml`.
+3. Dispatch the correct phase skill for the current stage.
+4. Run `gate-check.sh` at each transition.
+5. Pair that with `ghidra-agent-cli gate check --phase ...` where the CLI
+   supports the same aggregate check.
+6. Advance phase state only after the gate passes.
+7. Handle user dialogs such as resume/restart, optional Frida supplementation,
+   batch confirmation, divergence review, and completion.
 
-The orchestrator updates this file at each phase transition, recording:
-- Global progress (`overall_status`, `current_iteration`)
-- Phase-level gate status (`phases.P0..P2`)
-- Iteration-level details (`iterations.<NNN>.functions.<fn_id>`)
-- Verified boundary list (`verified_boundaries`)
-- Ghidra operation queue state (`ghidra_queue`)
+## Gate Policy
 
-## Gate Checks
+- P0–P4 are normally target-level transitions.
+- P5 and P6 are evaluated per function in the workflow, even when the CLI still
+  exposes aggregate target-level checks for some paths.
+- `gate-check.sh` remains the final workflow authority for stage transitions.
+- `ghidra-agent-cli gate check` is the required CLI-facing gate surface and
+  should be used alongside the script where supported.
 
-The orchestrator calls `gate-check.sh` at each phase transition:
+## Required ghidra-agent-cli Commands
 
-```bash
-# Phase-level gates
-scripts/gate-check.sh --gate P0 --artifact-root <path>
-scripts/gate-check.sh --gate P1 --artifact-root <path>
-scripts/gate-check.sh --gate P2 --artifact-root <path>
-scripts/gate-check.sh --gate P3 --artifact-root <path>
-
-# Legacy P3 fallback for older iteration manifests
-scripts/gate-check.sh --gate P3 --artifact-root <path> --iteration 001
-
-# Function-level gates
-scripts/gate-check.sh --gate P5 --artifact-root <path> --iteration 001 --function fn_001
-scripts/gate-check.sh --gate P6 --artifact-root <path> --iteration 001 --function fn_001
-```
-
-Return codes: `0` = pass, `1` = fail (blocking), `2` = warn (conditional)
-
-For P5, a generated `.c` file alone is not enough. The gate must also confirm
-that `decompilation-record.yaml` records Ghidra provenance with
-`decompilation_backend: ghidra_headless` and
-`decompilation_action: decompile-selected`.
-
-## User Interaction
-
-The orchestrator uses dialogs for user interaction in these scenarios:
-
-| Scenario | Dialog Type |
-|---|---|
-| In-progress project found | Resume / Restart choice |
-| After P2 completion | Frida supplement needed? Yes/No |
-| After P3 discovery | Show batch list + Confirm/Modify |
-| P6 function diverged | Show divergence + Retry/Skip/Stop |
-| All iterations complete | Show summary + Confirm completion |
-
-## Available Tools
-
-- `scripts/gate-check.sh` — gate validation
-- `scripts/ghidra-queue.sh` — Ghidra lock management
-- `yq` — YAML read/write
-- Sub-agent dispatch capability
-- User dialog capability
-
-## Scripting Guidelines (If custom analysis is needed)
-
-- ⛔ **Python / Jython scripts are strictly forbidden**. Ghidra Headless is not configured with the Jython extension, so `.py` scripts will always crash with `GhidraScriptLoadException`.
-- ✅ **Write custom Java scripts**. If you need to write a custom Ghidra script to accomplish a task, write it in Java extending `GhidraScript`.
-- ⚠️ **Compilation Rule**: The file name MUST exactly match the public class name (e.g., `YourScript.java` MUST contain `public class YourScript extends GhidraScript`). Failure to do so causes `ClassNotFoundException`.
+- `ghidra-agent-cli context use`
+- `ghidra-agent-cli context show`
+- `ghidra-agent-cli workspace state show`
+- `ghidra-agent-cli workspace state set-phase`
+- `ghidra-agent-cli gate check`
+- `ghidra-agent-cli validate`
+- `ghidra-agent-cli progress compute-next-batch`
+- `ghidra-agent-cli progress show`
 
 ## Strict Prohibitions
 
-- ⛔ **Must not execute any Frida commands**
-- ⛔ **Must not write reconstruction code**
-- ⛔ **Must not modify any runtime artifacts under the root-level P1/P2 Markdown surfaces or `iterations/` directly via shell (use the sanctioned scripts or state updates)**
-- ⛔ **Must not accept external disassembly or decompilation as a substitute for Ghidra**. Commands such as `objdump`, `otool`, `llvm-objdump`, `nm`, `readelf`, `gdb`, `lldb`, and `radare2` may not be used to generate or justify `decompiled-output/` for P5.
-- ⛔ **Must halt or reject a worker plan that bypasses `run-headless-analysis.sh --action decompile-selected` for Selected Decompilation**
+- ⛔ Must not execute analysis work itself.
+- ⛔ Must not edit baseline, evidence, decompilation, or verification artifacts
+  directly except for explicit state updates it owns.
+- ⛔ Must not bypass `ghidra-agent-cli` for supported state, progress, context,
+  validation, or gate operations.
+- ⛔ Must not accept alternate decompilation backends in place of Ghidra.
 
-## Orchestration Pseudocode
+## Next Skill Routing
 
-```python
-def orchestrate(target_path):
-    state = load_pipeline_state(target_path)
-
-    if state and state.overall_status == "in_progress":
-        choice = popup("resume", summary_of(state))
-        if choice == "restart": state = None
-    if not state:
-        state = create_pipeline_state(target_path)
-
-    # ─── P0 ───
-    if not gate_passed(state, "P0"):
-        await parallel(
-            spawn_agent("intake-workspace", skill="headless-ghidra-intake",
-                        role="P0 workspace initialization",
-                        inputs={"target_path": target_path}),
-            spawn_agent("intake-ghidra", skill="headless-ghidra-intake",
-                        role="P0 Ghidra discovery",
-                        inputs={}),
-        )
-        run_gate("P0", state)
-
-    # ─── P1 ───
-    if not gate_passed(state, "P1"):
-        await spawn_agent("baseline-export", skill="headless-ghidra-baseline",
-                          role="P1 baseline export",
-                          inputs={"target_identity": read("intake/target-identity.yaml"),
-                                  "ghidra": read("intake/ghidra-discovery.yaml")})
-        run_gate("P1", state)
-
-    # ─── P2 ───
-    if not gate_passed(state, "P2"):
-        await parallel(
-            spawn_agent("evidence-review-imports", ...),
-            spawn_agent("evidence-review-strings", ...),
-            spawn_agent("evidence-review-types", ...),
-            spawn_agent("evidence-review-libraries", ...),
-        )
-        await spawn_agent("evidence-synthesize", ...)
-        if popup("need_frida?") == "yes":
-            await spawn_agent("evidence-frida", ...)
-        run_gate("P2", state)
-
-    # ─── Iteration Loop ───
-    while True:
-        iteration = next_iteration(state)
-
-        # P3
-        batch = await spawn_agent("discovery", ...)
-        confirmed = popup("confirm_batch", batch)
-        run_gate("P3", state, iteration)
-
-        # P4+P5
-        decompile_agents = [
-            spawn_agent(f"decompile-{fn.id}", ...)
-            for fn in confirmed.functions
-        ]
-        await parallel(*decompile_agents)
-        for fn in confirmed.functions:
-            run_gate("P5", state, iteration, fn.id)
-
-        # P6
-        verify_agents = [
-            spawn_agent(f"verify-{fn.id}", ...)
-            for fn in confirmed.functions
-        ]
-        await parallel(*verify_agents)
-        for fn in confirmed.functions:
-            gate = run_gate("P6", state, iteration, fn.id)
-            if gate.passed: mark_verified(state, fn)
-            else: add_retry(state, fn)
-
-        if all_goals_verified(state):
-            popup("completed", state)
-            break
-```
-
-## Artifact Path Conventions
-
-All artifacts are relative to `.work/ghidra-artifacts/<target-id>/`:
-
-| Phase | Path Prefix |
-|---|---|
-| P0 | `intake/` |
-| P1 | root-level baseline Markdown files such as `function-names.md` and `decompiled-output.md` |
-| P2 | root-level review exports such as `evidence-candidates.md` |
-| P3 | root-level `target-selection.md` |
-| P3–P6 | `iterations/<NNN>/functions/<fn_id>/` |
-| Global | `pipeline-state.yaml` |
-
-Reconstruction project lives at `.work/reconstruction/<target-id>/`.
-
-## Invariant Constraints
-
-- **Headless-only workflows**. GUI operations are out of scope.
-- **Evidence-driven**. All decisions must reference observable evidence.
-- **Reproducible**. Commands, inputs, and expected results must be explicitly replayable.
-- **Auditable**. All artifacts are YAML or inspectable Markdown/C source.
-- **Ghidra-only decompilation**. Selected Decompilation has exactly one supported backend: Ghidra headless through the registered Java scripts and wrapper action.
+- P0 complete → `headless-ghidra-baseline`
+- P1 complete → `headless-ghidra-evidence`
+- P2 complete → `headless-ghidra-discovery`
+- P3 complete → `headless-ghidra-batch-decompile`
+- P5 complete for all selected functions → `headless-ghidra-frida-verify`
+- P6 complete for all selected functions → either loop back to P3 or finish

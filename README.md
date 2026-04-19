@@ -1,110 +1,92 @@
 # Headless Ghidra Skill Family
 
-End-to-end decompilation pipeline skill family. A global orchestrator manages
-seven phases (P0–P6), implementing a fully traceable, gate-checked workflow
-from target intake through Frida I/O verification.
+This repository defines a YAML-first, headless-only decompilation workflow
+around `ghidra-agent-cli`. A global orchestrator skill manages P0–P6, while the
+CLI subproject provides the supported command surface and artifact semantics.
+
+## Documentation Boundaries
+
+- [`ghidra-agent-cli/SKILL.md`](./ghidra-agent-cli/SKILL.md): CLI usage,
+  command groups, flags, output envelope, workspace layout, and YAML artifact
+  meanings.
+- [`headless-ghidra/SKILL.md`](./headless-ghidra/SKILL.md): the authoritative
+  P0–P6 workflow, routing, and orchestration rules.
+- `headless-ghidra-*/SKILL.md`: per-phase inputs, outputs, required CLI
+  commands, and phase-local constraints.
 
 ## Architecture
 
-```
+```text
 headless-ghidra                       ← global orchestrator
+├── ghidra-agent-cli                  ← bundled CLI/release subproject
 ├── headless-ghidra-intake            ← P0 target intake
 ├── headless-ghidra-baseline          ← P1 baseline extraction
-├── headless-ghidra-evidence          ← P2 evidence review (incl. library identification)
+├── headless-ghidra-evidence          ← P2 evidence review
 ├── headless-ghidra-discovery         ← P3 target selection
 ├── headless-ghidra-batch-decompile   ← P4+P5 batch decompilation
 └── headless-ghidra-frida-verify      ← P6 Frida I/O verification
 ```
 
-## Pipeline
+## Pipeline Summary
 
-```
+```text
 P0 Intake → P1 Baseline → P2 Evidence → [P3 Discovery → P4+P5 Decompile → P6 Verify]*
 ```
 
-- **P0–P2**: One-time initialization
-- **P3–P6**: Iteration loop, each round processes a batch of frontier functions
-- The orchestrator manages global state via `pipeline-state.yaml`
-- Each phase transition is validated by `gate-check.sh` programmatic gate checks
+- P0–P2 are one-time initialization and evidence setup.
+- P3–P6 form the iteration loop.
+- `ghidra-agent-cli` is the required control-plane interface for supported
+  operations.
+- `gate-check.sh` remains the workflow gate authority; `ghidra-agent-cli gate
+  check` provides the CLI-facing gate surface where supported.
 
-## Skill Map
+## Shared Workspace Model
 
-| Skill | Phase | Responsibility | Agent Count |
-|---|---|---|---|
-| [`headless-ghidra`](./headless-ghidra/) | Orchestrator | Read state, dispatch sub-agents, run gates, show dialogs | 1 |
-| [`headless-ghidra-intake`](./headless-ghidra-intake/) | P0 | Target identity, workspace, Ghidra discovery | 2 (parallel) |
-| [`headless-ghidra-baseline`](./headless-ghidra-baseline/) | P1 | Ghidra headless baseline Markdown export with a blocked decompilation placeholder | 1 |
-| [`headless-ghidra-evidence`](./headless-ghidra-evidence/) | P2 | Frontier evidence review into `evidence-candidates.md` plus optional Frida | 4–6 (parallel) |
-| [`headless-ghidra-discovery`](./headless-ghidra-discovery/) | P3 | Automatic default target selection into `target-selection.md` | 1/round |
-| [`headless-ghidra-batch-decompile`](./headless-ghidra-batch-decompile/) | P4+P5 | Source comparison → semantic rebuild → Ghidra-only decompile | N/round (fn-parallel) |
-| [`headless-ghidra-frida-verify`](./headless-ghidra-frida-verify/) | P6 | Frida I/O recording → comparison → gate verdict | N/round (fn-parallel) |
+```text
+targets/<target-id>/
+└── ghidra-projects/
 
-## Core Constraints
-
-- **Headless-only workflows**. GUI operations are out of scope.
-- **Evidence-driven**. All decisions reference observable evidence.
-- **Reproducible**. Commands, inputs, and expected results are explicitly replayable.
-- **Ghidra-only decompilation**. Selected Decompilation must run through `run-headless-analysis.sh --action decompile-selected` and the Java Ghidra scripts; external shell disassembly or decompilation tools do not satisfy the workflow.
-- **Mixed tracked artifacts**. Runtime surfaces currently use Markdown for
-  the validated P1–P3 exports and YAML for pipeline state, reconstruction
-  manifests, and later per-function records.
-- **Gate-checked**. Every phase transition is validated by `gate-check.sh`.
-
-## Artifact Path Conventions
-
-```
-.work/
-├── ghidra-artifacts/<target-id>/          ← analysis artifacts
-│   ├── pipeline-state.yaml               ← single source of truth
-│   ├── intake/                           ← P0 YAML artifacts
-│   ├── function-names.md                ← P1 baseline surface
-│   ├── imports-and-libraries.md         ← P1 baseline surface
-│   ├── strings-and-constants.md         ← P1 baseline surface
-│   ├── types-and-structs.md             ← P1 baseline surface
-│   ├── xrefs-and-callgraph.md           ← P1 baseline surface
-│   ├── decompiled-output.md             ← P1 blocked placeholder
-│   ├── evidence-candidates.md           ← P2 review surface
-│   ├── target-selection.md              ← P3 selection surface
-│   └── iterations/<NNN>/                 ← P3–P6 iteration artifacts
-│       └── functions/<fn_id>/            ← per-function artifacts
-├── ghidra-projects/<target-id>/          ← Ghidra project (single instance)
-└── reconstruction/<target-id>/           ← CMake reconstruction project
-    ├── CMakeLists.txt
-    ├── include/
-    ├── src/
-    ├── third_party/
-    ├── stubs/
-    └── tests/
+artifacts/<target-id>/
+├── pipeline-state.yaml
+├── scope.yaml
+├── intake/
+├── baseline/
+│   ├── functions.yaml
+│   ├── callgraph.yaml
+│   ├── types.yaml
+│   ├── vtables.yaml
+│   ├── constants.yaml
+│   ├── strings.yaml
+│   └── imports.yaml
+├── third-party/
+│   ├── identified.yaml
+│   └── sources/
+├── evidence-candidates.yaml
+├── target-selection.yaml
+├── decompilation/
+│   ├── progress.yaml
+│   ├── next-batch.yaml
+│   └── functions/<fn_id>/
+│       ├── decompilation-record.yaml
+│       └── verification-result.yaml
+├── gates/
+└── scripts/
 ```
 
-## Scripts
+## Core Rules
 
-| Script | Location | Purpose |
-|---|---|---|
-| `gate-check.sh` | `headless-ghidra/scripts/` | Programmatic gate validation |
-| `ghidra-queue.sh` | `headless-ghidra/scripts/` | Ghidra operation serial lock |
-| `reconstruction-init.sh` | `headless-ghidra/scripts/` | Reconstruction project initialization |
-| `run-headless-analysis.sh` | `headless-ghidra/scripts/` | Ghidra headless analysis |
-| `discover-ghidra.sh` | `headless-ghidra/scripts/` | Ghidra installation discovery |
-| `normalize-ar-archive.sh` | `headless-ghidra/scripts/` | Archive normalization |
+- Headless-only workflows.
+- Ghidra is the only approved decompilation backend.
+- Supported workspace, metadata, Ghidra, Frida, progress, and gate operations
+  must go through `ghidra-agent-cli`.
+- Phase docs may define additional workflow logic, but they should reference the
+  YAML artifacts above instead of inventing a parallel alternate runtime surface.
 
-## Frida Scripts
+## Repository Notes
 
-| Script | Purpose |
-|---|---|
-| `io-capture.js` | Generic function I/O recording |
-| `io-compare.js` | Original vs reconstructed I/O comparison |
-| `fuzz-input-gen.js` | Signature-based fuzz input generation |
-| `signature-analysis.js` | Runtime function signature analysis |
-| `decomp-compare.js` | Decompilation comparison |
-| `call-tree-trace.js` | Call tree tracing |
-| `dispatch-vtable-trace.js` | Dispatch/vtable tracing |
-| `hotpath-coverage.js` | Hot path coverage |
-
-## Quick Start
-
-1. The orchestrator reads target path, checks for an in-progress `pipeline-state.yaml`
-2. If none exists, starts a fresh pipeline from P0
-3. If one exists, shows a dialog asking to resume or restart
-4. Executes P0 → P1 → P2 → [P3 → P4+P5 → P6]* in order
-5. Runs `gate-check.sh` at each phase transition; continues on pass
+- `ghidra-agent-cli/` is tracked as a normal subdirectory of this repository.
+- The preserved nested git metadata lives at `ghidra-agent-cli/.git-local-backup/`
+  and is ignored by the outer repo.
+- The authoritative release workflow/action live at
+  `.github/workflows/release.yml` and `.github/actions/setup-build-env/action.yml`,
+  operating on the `ghidra-agent-cli/` subdirectory.

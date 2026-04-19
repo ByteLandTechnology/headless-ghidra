@@ -1,0 +1,23 @@
+{
+  "name": "ghidra-agent-cli",
+  "version": "0.0.0-development",
+  "description": "Drive the headless-Ghidra decompilation pipeline through schema-validated YAML workspaces",
+  "license": "UNLICENSED",
+  "repository": { "type": "git", "url": "https://github.com/ByteLandTechnology/headless-ghidra" },
+  "type": "module",
+  "bin": {
+    "ghidra-agent-cli": "bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "optionalDependencies": {}
+}
