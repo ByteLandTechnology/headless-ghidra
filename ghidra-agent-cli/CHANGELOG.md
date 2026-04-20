@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.0.0...v1.0.1) (2026-04-20)
+
+### Bug Fixes
+
+* **release:** simplify GitHub asset upload logic ([076b916](https://github.com/ByteLandTechnology/headless-ghidra/commit/076b9160cfa2c745615600fd69a2b46366f02c2c))
+* **skills:** add YAML frontmatter to ghidra-agent-cli SKILL.md ([9328f24](https://github.com/ByteLandTechnology/headless-ghidra/commit/9328f240f702a84a7a305e208dd207fa178142f9))
+
 ## 1.0.0 (2026-04-20)
 
 ### ⚠ BREAKING CHANGES
