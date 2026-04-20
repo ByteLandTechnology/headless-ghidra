@@ -1,3 +1,53 @@
+## 1.0.0 (2026-04-20)
+
+### ⚠ BREAKING CHANGES
+
+* **skills:** Replace 7 fragmented skills with 1 orchestrator + 6 phase sub-skills.
+
+New architecture:
+- headless-ghidra: global orchestrator (zero execution, dispatch only)
+- headless-ghidra-intake: P0 target intake (2 parallel agents)
+- headless-ghidra-baseline: P1 baseline extraction (new)
+- headless-ghidra-evidence: P2 evidence review (4-dim parallel + library ID)
+- headless-ghidra-discovery: P3 batch discovery (new)
+- headless-ghidra-batch-decompile: P4+P5 batch decompilation (new)
+- headless-ghidra-frida-verify: P6 Frida I/O verification (new)
+
+New scripts:
+- gate-check.sh: programmatic gate validation (P0-P6)
+- ghidra-queue.sh: FIFO lock for Ghidra operation serialization
+- reconstruction-init.sh: CMake reconstruction project scaffolding
+- io-capture.js, io-compare.js, fuzz-input-gen.js: Frida verification
+
+Removed skills:
+- headless-ghidra-frida-runtime-injection (scripts migrated)
+- headless-ghidra-frida-evidence
+- headless-ghidra-progressive-decompilation
+- headless-ghidra-script-review
+- headless-ghidra-auto-evolution
+
+### Features
+
+* add ghidra-agent-cli subproject and consolidate docs ([00dfdfe](https://github.com/ByteLandTechnology/headless-ghidra/commit/00dfdfe746c9935bf42639d39eef79ebc4a2caf1))
+* initial headless ghidra skill suite ([309a1ee](https://github.com/ByteLandTechnology/headless-ghidra/commit/309a1ee81931973f46b18b0ae59dadcfa91b891d))
+
+### Bug Fixes
+
+* enforce Ghidra-only decompilation ([dc9ba54](https://github.com/ByteLandTechnology/headless-ghidra/commit/dc9ba54df27ab6f0aaa23dab878b1d317d2e52c3))
+* **gates:** complete all gate check implementations per SKILL.md spec ([507ef30](https://github.com/ByteLandTechnology/headless-ghidra/commit/507ef30a5b8f4444e3763711432166a36e75fe37))
+* **headless-ghidra:** stabilize verification pipeline ([64bb243](https://github.com/ByteLandTechnology/headless-ghidra/commit/64bb243c78283b7d1586a1b8bd5ff2ce63c0d7bf))
+* resolve P1 index bug, discover-ghidra double-call, and remove blank agent YAMLs ([03cc054](https://github.com/ByteLandTechnology/headless-ghidra/commit/03cc054c2b40ad5cf79e9cb6c1dd387e706c7b54))
+* **runner:** add analysis timeout override for large binaries ([34ceee3](https://github.com/ByteLandTechnology/headless-ghidra/commit/34ceee3c88878ad7d6a93c92b2c6d119cbad1e25))
+* **runner:** add stale lock detection and PID tracking to ghidra-queue ([ac63771](https://github.com/ByteLandTechnology/headless-ghidra/commit/ac637716fda5d434b53d6ce4f5159eaaaa1ac55a))
+* **runner:** align artifact format references from .md to .yaml ([33b6bd6](https://github.com/ByteLandTechnology/headless-ghidra/commit/33b6bd6cc48d2b75af7036a1a8f20f728d74eca5))
+* **scripts:** use nameref instead of eval for array operations ([e9d4e42](https://github.com/ByteLandTechnology/headless-ghidra/commit/e9d4e425e4eb1cbbc3e23502c226c81aaca2180f))
+* **security:** clarify source comparison and runtime evidence guardrails ([30439c1](https://github.com/ByteLandTechnology/headless-ghidra/commit/30439c12c285593b8abab67e9241e89ed6c210ed))
+* **templates:** replace Python template with Java to match pipeline constraints ([b4add67](https://github.com/ByteLandTechnology/headless-ghidra/commit/b4add67563ed695a6d59e49f0339ff5b54a6e85c))
+
+### Code Refactoring
+
+* **skills:** restructure into P0-P6 pipeline with orchestrator ([0aaee14](https://github.com/ByteLandTechnology/headless-ghidra/commit/0aaee143235e2744f65e4c2b796d77e716453c17))
+
 # Changelog
 
 All notable changes to this project are recorded here by `semantic-release`.
