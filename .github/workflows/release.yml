@@ -175,19 +175,16 @@ jobs:
           node scripts/release/publish-npm-packages.mjs "$version"
           echo "Ensuring GitHub Release exists and uploading missing assets..."
           gh release view "v${version}" >/dev/null 2>&1 || gh release create "v${version}" --title "v${version}" --notes "Recovered release v${version}."
-          existing=$(gh release view "v${version}" --json assets -q '.assets[].name' 2>/dev/null || true)
-          upload_files=""
+          upload_count=0
           for f in dist/*.tar.gz dist/*.sha256 dist/provenance.json; do
             [ -f "$f" ] || continue
             bn=$(basename "$f")
-            if ! echo "$existing" | grep -qxF "$bn"; then
-              upload_files="$upload_files $f"
-            fi
+            # Use explicit name=path to ensure correct asset naming (avoids GitHub defaulting to "release archive")
+            # --clobber overwrites any existing asset that may have been incorrectly named in a prior attempt
+            gh release upload "v${version}" "$bn=$f" --clobber
+            upload_count=$((upload_count + 1))
           done
-          if [ -n "$upload_files" ]; then
-            # shellcheck disable=SC2086
-            gh release upload "v${version}" $upload_files
-          else
+          if [ "$upload_count" -eq 0 ]; then
             echo "All assets already present on release v${version}, skipping upload."
           fi
           echo "Recovery complete."
