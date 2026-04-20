@@ -1,3 +1,8 @@
+---
+name: "ghidra-agent-cli"
+description: "Rust CLI reference for the headless-ghidra pipeline. Covers command syntax, flags, output contract, artifact paths, and workspace layout for all ghidra-agent-cli subcommands. Load when: constructing a ghidra-agent-cli command, interpreting its output, resolving a flag or artifact path question, or debugging CLI behavior. Do not load for P0–P6 workflow sequencing — use the headless-ghidra skill family instead."
+---
+
 # ghidra-agent-cli
 
 ## Description
