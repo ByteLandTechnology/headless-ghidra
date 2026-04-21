@@ -35,6 +35,167 @@ pub fn save_gate_report(workspace: &Path, target: &str, report: &GateReport) -> 
     )
 }
 
+pub const ALL_PHASES: &[&str] = &["P0", "P0.5", "P1", "P2", "P3", "P4", "P5", "P6"];
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhaseInfo {
+    pub phase: String,
+    pub name: String,
+    pub checks: Vec<(String, String)>,
+}
+
+pub fn phase_descriptions() -> Vec<PhaseInfo> {
+    vec![
+        PhaseInfo {
+            phase: "P0".into(),
+            name: "Intake".into(),
+            checks: vec![(
+                "P0_01".into(),
+                "pipeline-state.yaml exists and is valid YAML with target field".into(),
+            )],
+        },
+        PhaseInfo {
+            phase: "P0.5".into(),
+            name: "Scope".into(),
+            checks: vec![(
+                "P0.5_01".into(),
+                "scope.yaml exists with non-empty entries".into(),
+            )],
+        },
+        PhaseInfo {
+            phase: "P1".into(),
+            name: "Baseline".into(),
+            checks: [
+                "functions.yaml",
+                "callgraph.yaml",
+                "types.yaml",
+                "vtables.yaml",
+                "constants.yaml",
+                "strings.yaml",
+                "imports.yaml",
+            ]
+            .iter()
+            .map(|name| {
+                (
+                    format!("P1_{}", name.replace('.', "_")),
+                    format!("baseline/{name} exists and is parseable"),
+                )
+            })
+            .collect(),
+        },
+        PhaseInfo {
+            phase: "P2".into(),
+            name: "Evidence".into(),
+            checks: vec![
+                (
+                    "P2_01".into(),
+                    "evidence-candidates.yaml or target-selection.yaml exists".into(),
+                ),
+                (
+                    "P2_02".into(),
+                    "third-party: >= 1 library with confidence >= medium".into(),
+                ),
+                (
+                    "P2_03".into(),
+                    "third-party: function_classification coverage > 0%".into(),
+                ),
+            ],
+        },
+        PhaseInfo {
+            phase: "P3".into(),
+            name: "Discovery".into(),
+            checks: vec![
+                (
+                    "P3_01".into(),
+                    "target-selection.yaml exists with selected_target".into(),
+                ),
+                (
+                    "P3_02".into(),
+                    ">= 1 candidate with status ready or selected".into(),
+                ),
+                ("P3_03".into(), "scope: entries non-empty".into()),
+            ],
+        },
+        PhaseInfo {
+            phase: "P4".into(),
+            name: "Batch Decompile".into(),
+            checks: vec![
+                (
+                    "P4_01".into(),
+                    "decompilation/progress.yaml exists".into(),
+                ),
+                (
+                    "P4_02".into(),
+                    "decompilation/next-batch.yaml exists and non-empty".into(),
+                ),
+                (
+                    "P4_03".into(),
+                    "next-batch entries reference valid scope or baseline addresses".into(),
+                ),
+            ],
+        },
+        PhaseInfo {
+            phase: "P5".into(),
+            name: "Decompile Complete".into(),
+            checks: vec![
+                (
+                    "P5_01".into(),
+                    ">= 1 decompiled C file exists".into(),
+                ),
+                ("P5_02".into(), "coverage >= 10%".into()),
+                (
+                    "P5_03".into(),
+                    "each decompiled function has decompilation-record.yaml with required fields"
+                        .into(),
+                ),
+            ],
+        },
+        PhaseInfo {
+            phase: "P6".into(),
+            name: "Verification".into(),
+            checks: vec![
+                (
+                    "P6_01".into(),
+                    "verification-result.yaml exists for each decompiled function".into(),
+                ),
+                (
+                    "P6_02".into(),
+                    "no unresolved mismatches without notes".into(),
+                ),
+            ],
+        },
+    ]
+}
+
+fn validate_yaml_has_field(path: &Path, field: &str) -> Result<bool> {
+    let content = fs::read_to_string(path)?;
+    let doc: serde_yaml::Value = serde_yaml::from_str(&content)?;
+    Ok(doc.get(field).is_some())
+}
+
+fn validate_yaml_parseable(path: &Path) -> bool {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    serde_yaml::from_str::<serde_yaml::Value>(&content).is_ok()
+}
+
+fn validate_yaml_sequence_nonempty(path: &Path, field: &str) -> bool {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let doc = match serde_yaml::from_str::<serde_yaml::Value>(&content) {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+    doc.get(field)
+        .and_then(|v| v.as_sequence())
+        .map(|seq| !seq.is_empty())
+        .unwrap_or(false)
+}
+
 pub fn check_phase(workspace: &Path, target: &str, phase: &str) -> Result<GateReport> {
     let ad = artifact_dir(workspace, target);
 
@@ -66,20 +227,57 @@ pub fn check_phase(workspace: &Path, target: &str, phase: &str) -> Result<GateRe
 }
 
 fn p0_checks(ad: &Path) -> Vec<GateCheck> {
-    vec![GateCheck {
+    let path = ad.join("pipeline-state.yaml");
+    let exists = path.exists();
+    let mut checks = vec![GateCheck {
         id: "P0_01".into(),
-        description: "pipeline-state.yaml exists".into(),
-        passed: ad.join("pipeline-state.yaml").exists(),
-        detail: None,
-    }]
+        description: "pipeline-state.yaml exists and is valid YAML with target field".into(),
+        passed: exists
+            && validate_yaml_parseable(&path)
+            && validate_yaml_has_field(&path, "target").unwrap_or(false),
+        detail: if !exists {
+            Some("pipeline-state.yaml not found".into())
+        } else if !validate_yaml_parseable(&path) {
+            Some("pipeline-state.yaml is not valid YAML".into())
+        } else if validate_yaml_has_field(&path, "target").unwrap_or(false) {
+            None
+        } else {
+            Some("pipeline-state.yaml missing required 'target' field".into())
+        },
+    }];
+
+    // P0_02: pipeline-state.yaml has phase field
+    let has_phase = exists && validate_yaml_has_field(&path, "phase").unwrap_or(false);
+    checks.push(GateCheck {
+        id: "P0_02".into(),
+        description: "pipeline-state.yaml has phase field".into(),
+        passed: has_phase,
+        detail: if has_phase {
+            None
+        } else {
+            Some("pipeline-state.yaml missing required 'phase' field".into())
+        },
+    });
+
+    checks
 }
 
 fn p0_5_checks(ad: &Path) -> Vec<GateCheck> {
+    let path = ad.join("scope.yaml");
+    let exists = path.exists();
     vec![GateCheck {
         id: "P0.5_01".into(),
-        description: "scope.yaml exists".into(),
-        passed: ad.join("scope.yaml").exists(),
-        detail: None,
+        description: "scope.yaml exists with non-empty entries".into(),
+        passed: exists && validate_yaml_sequence_nonempty(&path, "entries"),
+        detail: if !exists {
+            Some("scope.yaml not found".into())
+        } else if !validate_yaml_parseable(&path) {
+            Some("scope.yaml is not valid YAML".into())
+        } else if !validate_yaml_sequence_nonempty(&path, "entries") {
+            Some("scope.yaml has empty or missing 'entries' field".into())
+        } else {
+            None
+        },
     }]
 }
 
@@ -95,11 +293,22 @@ fn p1_checks(ad: &Path) -> Vec<GateCheck> {
     ];
     names
         .iter()
-        .map(|name| GateCheck {
-            id: format!("P1_{}", name.replace('.', "_")),
-            description: format!("baseline/{} exists", name),
-            passed: ad.join("baseline").join(name).exists(),
-            detail: None,
+        .map(|name| {
+            let path = ad.join("baseline").join(name);
+            let exists = path.exists();
+            let parseable = exists && validate_yaml_parseable(&path);
+            GateCheck {
+                id: format!("P1_{}", name.replace('.', "_")),
+                description: format!("baseline/{name} exists and is parseable"),
+                passed: parseable,
+                detail: if !exists {
+                    Some(format!("baseline/{name} not found"))
+                } else if !parseable {
+                    Some(format!("baseline/{name} is not valid YAML"))
+                } else {
+                    None
+                },
+            }
         })
         .collect()
 }

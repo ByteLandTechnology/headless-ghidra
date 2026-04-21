@@ -21,7 +21,7 @@ New architecture:
 - headless-ghidra-frida-verify: P6 Frida I/O verification (new)
 
 New scripts:
-- gate-check.sh: programmatic gate validation (P0-P6)
+- ghidra-agent-cli gate check: programmatic gate validation (P0–P6, replaces legacy gate-check.sh)
 - ghidra-queue.sh: FIFO lock for Ghidra operation serialization
 - reconstruction-init.sh: CMake reconstruction project scaffolding
 - io-capture.js, io-compare.js, fuzz-input-gen.js: Frida verification

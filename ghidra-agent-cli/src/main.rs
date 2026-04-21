@@ -33,8 +33,6 @@ pub enum Phase {
     P1,
     #[value(name = "P2")]
     P2,
-    #[value(name = "P2.5")]
-    P2_5,
     #[value(name = "P3")]
     P3,
     #[value(name = "P4")]
@@ -52,7 +50,6 @@ impl Phase {
             Phase::P0_5 => "P0.5",
             Phase::P1 => "P1",
             Phase::P2 => "P2",
-            Phase::P2_5 => "P2.5",
             Phase::P3 => "P3",
             Phase::P4 => "P4",
             Phase::P5 => "P5",
@@ -857,8 +854,6 @@ pub enum GatePhase {
     P1,
     #[value(name = "P2")]
     P2,
-    #[value(name = "P2.5")]
-    P2_5,
     #[value(name = "P3")]
     P3,
     #[value(name = "P4")]
@@ -877,7 +872,6 @@ impl GatePhase {
             GatePhase::P0_5 => "P0.5",
             GatePhase::P1 => "P1",
             GatePhase::P2 => "P2",
-            GatePhase::P2_5 => "P2.5",
             GatePhase::P3 => "P3",
             GatePhase::P4 => "P4",
             GatePhase::P5 => "P5",
@@ -1354,15 +1348,53 @@ fn exit_code_for_error(err: &anyhow::Error) -> i32 {
 // Dispatch: top-level commands
 // ===========================================================================
 
+fn validate_baseline_doc(
+    doc: &serde_yaml::Value,
+    schema_name: &str,
+    collection_key: &str,
+    required_entry_fields: &[&str],
+    checks: &mut Vec<gate::GateCheck>,
+) {
+    let has_target = doc.get("target").and_then(|v| v.as_str()).is_some();
+    checks.push(gate::GateCheck {
+        id: format!("schema_{schema_name}_target"),
+        description: format!("{schema_name}.yaml has 'target' string"),
+        passed: has_target,
+        detail: if has_target { None } else { Some("missing 'target' field".into()) },
+    });
+
+    let has_collection = doc.get(collection_key).and_then(|v| v.as_sequence()).is_some();
+    checks.push(gate::GateCheck {
+        id: format!("schema_{schema_name}_{collection_key}"),
+        description: format!("{schema_name}.yaml has '{collection_key}' sequence"),
+        passed: has_collection,
+        detail: if has_collection { None } else { Some(format!("missing '{collection_key}' sequence")) },
+    });
+
+    if let Some(entries) = doc.get(collection_key).and_then(|v| v.as_sequence()) {
+        let missing: Vec<String> = entries.iter().enumerate()
+            .filter(|(_, entry)| {
+                required_entry_fields.iter().any(|f| entry.get(*f).is_none())
+            })
+            .map(|(i, _)| format!("{collection_key}[{i}]"))
+            .collect();
+        checks.push(gate::GateCheck {
+            id: format!("schema_{schema_name}_required_fields"),
+            description: format!("all {schema_name} entries have required fields ({})", required_entry_fields.join(", ")),
+            passed: missing.is_empty(),
+            detail: if missing.is_empty() { None } else { Some(format!("missing fields in: {}", missing.join(", "))) },
+        });
+    }
+}
+
 fn exec_validate(cli: &Cli, args: &ValidateArgs, fmt: Format) -> Result<i32> {
     let ws = resolve_workspace(args.workspace.as_ref(), cli.workspace.as_ref())?;
     let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
-
-    let phases = ["P0", "P0.5", "P1", "P2", "P2.5", "P3", "P4", "P5", "P6"];
     let mut all_passed = true;
     let mut reports = Vec::new();
 
-    for phase in &phases {
+    // Phase gate checks
+    for phase in gate::ALL_PHASES {
         let report = gate::check_phase(&ws, &target, phase)?;
         if !report.passed {
             all_passed = false;
@@ -1370,20 +1402,195 @@ fn exec_validate(cli: &Cli, args: &ValidateArgs, fmt: Format) -> Result<i32> {
         reports.push(report);
     }
 
-    // Optional schema validation
+    // Optional schema validation of specific file
     if let Some(schema_name) = &args.schema {
-        let _ = schema_name; // schema validation is a placeholder
+        let ad = workspace::artifact_dir(&ws, &target);
+        let file_path = args.file.as_ref().cloned().unwrap_or_else(|| {
+            match schema_name.as_str() {
+                "functions" => ad.join("baseline").join("functions.yaml"),
+                "callgraph" => ad.join("baseline").join("callgraph.yaml"),
+                "types" => ad.join("baseline").join("types.yaml"),
+                "vtables" => ad.join("baseline").join("vtables.yaml"),
+                "constants" => ad.join("baseline").join("constants.yaml"),
+                "strings" => ad.join("baseline").join("strings.yaml"),
+                "imports" => ad.join("baseline").join("imports.yaml"),
+                "scope" => ad.join("scope.yaml"),
+                "pipeline-state" => ad.join("pipeline-state.yaml"),
+                "target-selection" => ad.join("target-selection.yaml"),
+                "progress" => ad.join("decompilation").join("progress.yaml"),
+                "identified" => ad.join("third-party").join("identified.yaml"),
+                _ => ad.join(format!("{schema_name}.yaml")),
+            }
+        });
+
+        if !file_path.exists() {
+            reports.push(gate::GateReport {
+                target: target.clone(),
+                phase: format!("schema:{schema_name}"),
+                passed: false,
+                checks: vec![gate::GateCheck {
+                    id: format!("schema_{schema_name}"),
+                    description: format!("schema file {} exists", file_path.display()),
+                    passed: false,
+                    detail: Some(format!("file not found: {}", file_path.display())),
+                }],
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            });
+            all_passed = false;
+        } else {
+            let raw = std::fs::read_to_string(&file_path)
+                .map_err(|e| anyhow!("failed to read {}: {e}", file_path.display()))?;
+            let parse_result: Result<serde_yaml::Value, _> = serde_yaml::from_str(&raw);
+
+            match parse_result {
+                Ok(doc) => {
+                    let mut schema_checks = Vec::new();
+
+                    // Validate top-level structure for known schemas
+                    match schema_name.as_str() {
+                        "functions" => {
+                            let has_functions = doc.get("functions").and_then(|v| v.as_sequence()).is_some();
+                            let has_target = doc.get("target").and_then(|v| v.as_str()).is_some();
+                            schema_checks.push(gate::GateCheck {
+                                id: "schema_functions_top_level".into(),
+                                description: "functions.yaml has 'functions' sequence".into(),
+                                passed: has_functions,
+                                detail: if has_functions { None } else { Some("missing 'functions' sequence field".into()) },
+                            });
+                            schema_checks.push(gate::GateCheck {
+                                id: "schema_functions_target".into(),
+                                description: "functions.yaml has 'target' string".into(),
+                                passed: has_target,
+                                detail: if has_target { None } else { Some("missing 'target' field".into()) },
+                            });
+                            // Validate each function entry has required fields
+                            if let Some(fns) = doc.get("functions").and_then(|v| v.as_sequence()) {
+                                let missing: Vec<String> = fns.iter().enumerate()
+                                    .filter(|(_, f)| f.get("addr").is_none())
+                                    .map(|(i, _)| format!("functions[{i}]"))
+                                    .collect();
+                                schema_checks.push(gate::GateCheck {
+                                    id: "schema_functions_addr".into(),
+                                    description: "all function entries have 'addr'".into(),
+                                    passed: missing.is_empty(),
+                                    detail: if missing.is_empty() { None } else { Some(format!("missing addr in: {}", missing.join(", "))) },
+                                });
+                            }
+                            if args.strict
+                                && let Some(fns) = doc.get("functions").and_then(|v| v.as_sequence())
+                            {
+                                    let missing_name: Vec<String> = fns.iter().enumerate()
+                                        .filter(|(_, f)| f.get("name").is_none())
+                                        .map(|(i, _)| format!("functions[{i}]"))
+                                        .collect();
+                                    schema_checks.push(gate::GateCheck {
+                                        id: "schema_functions_name_strict".into(),
+                                        description: "[strict] all function entries have 'name'".into(),
+                                        passed: missing_name.is_empty(),
+                                        detail: if missing_name.is_empty() { None } else { Some(format!("missing name in: {}", missing_name.join(", "))) },
+                                    });
+                                }
+                        }
+                        "scope" => {
+                            let has_entries = doc.get("entries").and_then(|v| v.as_sequence()).map(|s| !s.is_empty()).unwrap_or(false);
+                            schema_checks.push(gate::GateCheck {
+                                id: "schema_scope_entries".into(),
+                                description: "scope.yaml has non-empty 'entries'".into(),
+                                passed: has_entries,
+                                detail: if has_entries { None } else { Some("missing or empty 'entries'".into()) },
+                            });
+                        }
+                        "pipeline-state" => {
+                            for field in &["target", "phase"] {
+                                let present = doc.get(*field).is_some();
+                                schema_checks.push(gate::GateCheck {
+                                    id: format!("schema_pipeline_state_{field}"),
+                                    description: format!("pipeline-state.yaml has '{field}'"),
+                                    passed: present,
+                                    detail: if present { None } else { Some(format!("missing '{field}'")) },
+                                });
+                            }
+                        }
+                        "target-selection" => {
+                            let has_selected = doc.get("selected_target").is_some();
+                            let has_candidates = doc.get("candidates").and_then(|v| v.as_sequence()).is_some();
+                            schema_checks.push(gate::GateCheck {
+                                id: "schema_target_selection_selected".into(),
+                                description: "target-selection.yaml has 'selected_target'".into(),
+                                passed: has_selected,
+                                detail: if has_selected { None } else { Some("missing 'selected_target'".into()) },
+                            });
+                            schema_checks.push(gate::GateCheck {
+                                id: "schema_target_selection_candidates".into(),
+                                description: "target-selection.yaml has 'candidates' sequence".into(),
+                                passed: has_candidates,
+                                detail: if has_candidates { None } else { Some("missing 'candidates' sequence".into()) },
+                            });
+                        }
+                        "callgraph" => {
+                            validate_baseline_doc(&doc, "callgraph", "edges", &["from", "to"], &mut schema_checks);
+                        }
+                        "types" => {
+                            validate_baseline_doc(&doc, "types", "types", &["name", "kind", "definition"], &mut schema_checks);
+                        }
+                        "vtables" => {
+                            validate_baseline_doc(&doc, "vtables", "vtables", &["class", "addr", "entries"], &mut schema_checks);
+                        }
+                        "constants" => {
+                            validate_baseline_doc(&doc, "constants", "constants", &["addr"], &mut schema_checks);
+                        }
+                        "strings" => {
+                            validate_baseline_doc(&doc, "strings", "strings", &["addr", "content"], &mut schema_checks);
+                        }
+                        "imports" => {
+                            validate_baseline_doc(&doc, "imports", "imports", &["library", "symbol"], &mut schema_checks);
+                        }
+                        _ => {
+                            // Generic: just verify it's valid YAML
+                            schema_checks.push(gate::GateCheck {
+                                id: format!("schema_{schema_name}_parseable"),
+                                description: format!("{schema_name} is valid YAML"),
+                                passed: true,
+                                detail: None,
+                            });
+                        }
+                    }
+
+                    let schema_passed = schema_checks.iter().all(|c| c.passed);
+                    if !schema_passed {
+                        all_passed = false;
+                    }
+                    reports.push(gate::GateReport {
+                        target: target.clone(),
+                        phase: format!("schema:{schema_name}"),
+                        passed: schema_passed,
+                        checks: schema_checks,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    });
+                }
+                Err(e) => {
+                    all_passed = false;
+                    reports.push(gate::GateReport {
+                        target: target.clone(),
+                        phase: format!("schema:{schema_name}"),
+                        passed: false,
+                        checks: vec![gate::GateCheck {
+                            id: format!("schema_{schema_name}_parse"),
+                            description: format!("{schema_name} is valid YAML"),
+                            passed: false,
+                            detail: Some(format!("YAML parse error: {e}")),
+                        }],
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    });
+                }
+            }
+        }
     }
 
-    if all_passed {
-        let out = ok_output_with_data("all gates passed", serde_yaml::to_value(&reports)?);
-        serialize_value(&mut std::io::stdout(), &out, fmt)?;
-        Ok(EXIT_SUCCESS)
-    } else {
-        let out = ok_output_with_data("some gates failed", serde_yaml::to_value(&reports)?);
-        serialize_value(&mut std::io::stdout(), &out, fmt)?;
-        Ok(EXIT_FAILURE)
-    }
+    let msg = if all_passed { "all gates passed" } else { "some gates failed" };
+    let out = ok_output_with_data(msg, serde_yaml::to_value(&reports)?);
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(if all_passed { EXIT_SUCCESS } else { EXIT_FAILURE })
 }
 
 fn exec_paths(cli: &Cli, fmt: Format) -> Result<i32> {
@@ -2354,7 +2561,7 @@ fn exec_gate_check(cli: &Cli, args: &GateCheckArgs, fmt: Format) -> Result<i32> 
 
     let phases: Vec<&str> = match args.phase {
         Some(ref p) if p.as_str() == "all" => {
-            vec!["P0", "P0.5", "P1", "P2", "P2.5", "P3", "P4", "P5", "P6"]
+            vec!["P0", "P0.5", "P1", "P2", "P3", "P4", "P5", "P6"]
         }
         Some(ref p) => vec![p.as_str()],
         None => vec!["P1"], // default phase
@@ -2386,10 +2593,32 @@ fn exec_gate_check(cli: &Cli, args: &GateCheckArgs, fmt: Format) -> Result<i32> 
 fn exec_gate_list(cli: &Cli, args: &GateListArgs, fmt: Format) -> Result<i32> {
     let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
     let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
-    let _ = (&ws, &target);
-    let out = ok_output("not yet implemented");
+
+    let phases = gate::phase_descriptions();
+    let mut results = Vec::new();
+
+    for info in &phases {
+        let report = gate::check_phase(&ws, &target, &info.phase)?;
+        results.push(serde_yaml::to_value(serde_json::json!({
+            "phase": info.phase,
+            "name": info.name,
+            "passed": report.passed,
+            "check_count": report.checks.len(),
+            "checks": report.checks,
+        }))?);
+    }
+
+    let all_passed = results.iter().all(|r| {
+        r.get("passed").and_then(|v| v.as_bool()).unwrap_or(false)
+    });
+    let msg = if all_passed {
+        "all gates passed"
+    } else {
+        "some gates failed"
+    };
+    let out = ok_output_with_data(msg, serde_yaml::Value::Sequence(results));
     serialize_value(&mut std::io::stdout(), &out, fmt)?;
-    Ok(EXIT_SUCCESS)
+    Ok(if all_passed { EXIT_SUCCESS } else { EXIT_FAILURE })
 }
 
 fn exec_gate_show(cli: &Cli, args: &GateShowArgs, fmt: Format) -> Result<i32> {
@@ -2709,6 +2938,34 @@ fn exec_frida_device_list(_cli: &Cli, fmt: Format) -> Result<i32> {
     );
     serialize_value(&mut std::io::stdout(), &out, fmt)?;
     Ok(EXIT_SUCCESS)
+}
+
+fn exec_frida_device_attach(_cli: &Cli, args: &DeviceAttachArgs, fmt: Format) -> Result<i32> {
+    let selector = DeviceSelector::parse(args.device.as_deref().unwrap_or("local"));
+
+    // Build the frida attach command
+    let mut cmd = std::process::Command::new("frida");
+    cmd.args(selector.to_frida_args());
+
+    if let Some(pid) = args.pid {
+        cmd.arg(pid.to_string());
+    } else {
+        return Err(anyhow!("--pid is required for device attach"));
+    }
+
+    // Run frida interactively — pipe stdin through
+    cmd.stdin(std::process::Stdio::inherit());
+    cmd.stdout(std::process::Stdio::inherit());
+    cmd.stderr(std::process::Stdio::inherit());
+
+    let status = cmd.status().map_err(|e| anyhow!("failed to run frida: {e}"))?;
+
+    let out = ok_output(&format!(
+        "frida attach exited with code {}",
+        status.code().unwrap_or(-1)
+    ));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(status.code().unwrap_or(EXIT_FAILURE))
 }
 
 fn exec_frida_io_capture(_cli: &Cli, args: &IoCaptureArgs, _fmt: Format) -> Result<i32> {
@@ -3478,8 +3735,8 @@ fn dispatch(cli: &Cli, command: &Commands, fmt: Format) -> Result<i32> {
                 exec_frida_device_list(cli, fmt)
             })
         }
-        Commands::Frida(FridaCmd::DeviceAttach(_)) => {
-            Err(anyhow!("frida device attach not yet implemented"))
+        Commands::Frida(FridaCmd::DeviceAttach(args)) => {
+            exec_frida_device_attach(cli, args, fmt)
         }
         Commands::Frida(FridaCmd::IoCapture(args)) => {
             with_lock(std::path::Path::new("."), None, "frida", || {

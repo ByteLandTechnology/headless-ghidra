@@ -71,22 +71,24 @@ impl ScriptRunner {
         let temp_dir = std::env::temp_dir();
         let script_path = temp_dir.join(format!("frida_script_{}.js", std::process::id()));
 
-        // Inject environment variables into script via placeholders
-        // Placeholder format: %%KEY%% - replaced with value, or removed if value is empty
+        // Build a JSON env block and prepend it; also replace legacy %%KEY%% placeholders
+        let env_json = serde_json::to_string(&self.env_vars)
+            .unwrap_or_else(|_| "{}".to_string());
+        let env_block = format!("const __ENV_PARAMS__ = {env_json};\n");
+
         let mut modified_script = script.to_string();
-        for (key, value) in &self.env_vars {
+        // Replace legacy %%KEY%% placeholders with JSON-safe lookups
+        for key in self.env_vars.keys() {
             let placeholder = format!("%%{}%%", key);
-            if value.is_empty() {
-                // Remove placeholder entirely for empty values
-                modified_script = modified_script.replace(&placeholder, "");
-            } else {
-                modified_script = modified_script.replace(&placeholder, value);
-            }
+            let replacement = format!("__ENV_PARAMS__[\"{}\"]", key);
+            modified_script = modified_script.replace(&placeholder, &replacement);
         }
+
+        let full_script = format!("{env_block}{modified_script}");
 
         {
             let mut file = fs::File::create(&script_path)?;
-            file.write_all(modified_script.as_bytes())?;
+            file.write_all(full_script.as_bytes())?;
         }
 
         let target = self.spawn_target.as_deref();
