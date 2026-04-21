@@ -148,7 +148,7 @@ public class ExportBaseline extends GhidraScript {
 
             Address start = block.getStart();
             Address end = block.getEnd();
-            DataIterator dataIter = listing.getDefinedData(start, end);
+            DataIterator dataIter = listing.getDefinedData(new AddressSet(start, end), true);
 
             while (dataIter.hasNext()) {
                 Data data = dataIter.next();
