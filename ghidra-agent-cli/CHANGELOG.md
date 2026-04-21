@@ -1,3 +1,14 @@
+## [1.1.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.0.1...v1.1.0) (2026-04-21)
+
+### Features
+
+* **cli:** implement gate list, validate schema, frida device-attach, and strengthen gate checks ([3fcbe3c](https://github.com/ByteLandTechnology/headless-ghidra/commit/3fcbe3c6446dd128d92ac8fffb9cdd04c6fbc92e))
+
+### Bug Fixes
+
+* **cli:** add vtables export and fix % escaping in ExportBaseline.java ([e83ae24](https://github.com/ByteLandTechnology/headless-ghidra/commit/e83ae24e01a4e9810eba72f3206191167661c5f6))
+* **cli:** resolve ghidra-scripts from binary path and document npm installation ([0d34323](https://github.com/ByteLandTechnology/headless-ghidra/commit/0d34323d1f6573b61c85a671e82286ab124f806d))
+
 ## [1.0.1](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.0.0...v1.0.1) (2026-04-20)
 
 ### Bug Fixes
