@@ -1,6 +1,6 @@
 [package]
 name = "ghidra-agent-cli"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2024"
 description = "Drive the headless-Ghidra decompilation pipeline end-to-end through schema-validated YAML workspaces, scripted Ghidra runs, and gated incremental reconstruction builds"
 

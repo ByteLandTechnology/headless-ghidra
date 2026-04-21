@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.1.0...v1.1.1) (2026-04-21)
+
+### Bug Fixes
+
+* **cli:** bundle ghidra-scripts in npm package ([71d4587](https://github.com/ByteLandTechnology/headless-ghidra/commit/71d45876abb080aa2c7ce2c9129935fe8c94cb78))
+* **scripts:** fix Ghidra 12.x API compat in ExportBaseline ([5d6ad0c](https://github.com/ByteLandTechnology/headless-ghidra/commit/5d6ad0cdd6ce4b618356e5e329eee47590382f40))
+
 ## [1.1.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.0.1...v1.1.0) (2026-04-21)
 
 ### Features

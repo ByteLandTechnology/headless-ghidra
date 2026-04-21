@@ -1,6 +1,6 @@
 {
   "name": "ghidra-agent-cli",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Drive the headless-Ghidra decompilation pipeline through schema-validated YAML workspaces",
   "license": "UNLICENSED",
   "repository": {
@@ -24,11 +24,11 @@
     "provenance": true
   },
   "optionalDependencies": {
-    "@cli-forge-bin/ghidra-agent-cli-darwin-arm64": "1.1.0",
-    "@cli-forge-bin/ghidra-agent-cli-darwin-x64": "1.1.0",
-    "@cli-forge-bin/ghidra-agent-cli-linux-arm64": "1.1.0",
-    "@cli-forge-bin/ghidra-agent-cli-linux-x64": "1.1.0",
-    "@cli-forge-bin/ghidra-agent-cli-win32-arm64": "1.1.0",
-    "@cli-forge-bin/ghidra-agent-cli-win32-x64": "1.1.0"
+    "@cli-forge-bin/ghidra-agent-cli-darwin-arm64": "1.1.1",
+    "@cli-forge-bin/ghidra-agent-cli-darwin-x64": "1.1.1",
+    "@cli-forge-bin/ghidra-agent-cli-linux-arm64": "1.1.1",
+    "@cli-forge-bin/ghidra-agent-cli-linux-x64": "1.1.1",
+    "@cli-forge-bin/ghidra-agent-cli-win32-arm64": "1.1.1",
+    "@cli-forge-bin/ghidra-agent-cli-win32-x64": "1.1.1"
   }
 }
