@@ -31,6 +31,7 @@ public class ExportBaseline extends GhidraScript {
         exportFunctions(baseDir);
         exportCallgraph(baseDir);
         exportTypes(baseDir);
+        exportVtables(baseDir);
         exportConstants(baseDir);
         exportStrings(baseDir);
         exportImports(baseDir);
@@ -124,6 +125,88 @@ public class ExportBaseline extends GhidraScript {
         for (Category sub : cat.getCategories()) {
             exportCategoryTypes(yaml, sub, prefix + "/" + cat.getName());
         }
+    }
+
+    private void exportVtables(Path dir) throws IOException {
+        StringBuilder yaml = new StringBuilder();
+        yaml.append("target: ").append(escapeYaml(target)).append("\n");
+        yaml.append("vtables:\n");
+
+        int count = 0;
+        // Walk all defined data looking for vtable-like structures:
+        // pointers in read-only sections that point to functions.
+        Memory mem = currentProgram.getMemory();
+        Listing listing = currentProgram.getListing();
+
+        for (MemoryBlock block : mem.getBlocks()) {
+            String blockName = block.getName().toLowerCase();
+            // Look in .rodata, .const, __const, .data.rel.ro, etc.
+            if (!blockName.contains("rodata") && !blockName.contains("const")
+                && !blockName.contains("data.rel.ro") && !blockName.contains(".data")) {
+                continue;
+            }
+
+            Address start = block.getStart();
+            Address end = block.getEnd();
+            DataIterator dataIter = listing.getDefinedData(start, end);
+
+            while (dataIter.hasNext()) {
+                Data data = dataIter.next();
+                // Look for pointer arrays where the first element points to a function
+                if (!(data.getDataType() instanceof Pointer)) {
+                    continue;
+                }
+
+                // Collect consecutive function pointers starting from this address
+                List<String> funcAddrs = new ArrayList<>();
+                Address scanAddr = data.getAddress();
+                int ptrSize = data.getLength();
+
+                for (int offset = 0; offset < 64; offset++) { // scan up to 64 slots
+                    Data slot = listing.getDefinedDataAt(scanAddr.add(offset * ptrSize));
+                    if (slot == null || !(slot.getDataType() instanceof Pointer)) {
+                        break;
+                    }
+                    Object value = slot.getValue();
+                    if (value instanceof Address) {
+                        Address targetAddr = (Address) value;
+                        Function func = listing.getFunctionAt(targetAddr);
+                        if (func != null) {
+                            funcAddrs.add(targetAddr.toString());
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+
+                // A vtable needs at least 2 function pointers
+                if (funcAddrs.size() >= 2) {
+                    String className = data.getLabel();
+                    if (className == null || className.equals(data.getAddress().toString())) {
+                        // Try to derive class name from surrounding symbols
+                        Symbol sym = currentProgram.getSymbolTable().getPrimarySymbol(data.getAddress());
+                        className = sym != null ? sym.getName() : "vtable_" + data.getAddress().toString();
+                    }
+
+                    yaml.append("  - class: ").append(escapeYaml(className)).append("\n");
+                    yaml.append("    addr: \"").append(data.getAddress().toString()).append("\"\n");
+                    yaml.append("    entries:\n");
+                    for (String fa : funcAddrs) {
+                        yaml.append("      - \"").append(fa).append("\"\n");
+                    }
+                    count++;
+
+                    // Skip past the entries we already emitted
+                    // (the outer DataIterator will also visit them, but they
+                    //  won't start a new vtable because they're mid-array)
+                }
+            }
+        }
+
+        Files.writeString(dir.resolve("vtables.yaml"), yaml.toString());
+        println("  exported vtables.yaml (" + count + " vtables)");
     }
 
     private void exportConstants(Path dir) throws IOException {
@@ -223,7 +306,7 @@ public class ExportBaseline extends GhidraScript {
     private String escapeYaml(String s) {
         if (s == null) return "\"\"";
         // Check if string needs quoting (special chars, leading/trailing spaces, or control chars)
-        if (s.contains(":") || s.contains("\"") || s.contains("'") || s.contains("\n") || s.startsWith(" ") || s.endsWith(" ") || s.contains("#") || s.contains("[") || s.contains("]") || s.contains("{") || s.contains("}") || s.contains(",") || s.contains("&") || s.contains("*") || s.contains("!") || s.contains("|") || s.contains(">") || s.contains("=") || s.contains("-") || s.equals("") || s.equals("~") || s.equals("@") || s.equals("%") || s.equals("^") || hasControlChars(s)) {
+        if (s.contains(":") || s.contains("\"") || s.contains("'") || s.contains("\n") || s.startsWith(" ") || s.endsWith(" ") || s.contains("#") || s.contains("[") || s.contains("]") || s.contains("{") || s.contains("}") || s.contains(",") || s.contains("&") || s.contains("*") || s.contains("!") || s.contains("|") || s.contains(">") || s.contains("=") || s.startsWith("-") || s.equals("") || s.equals("~") || s.equals("@") || s.contains("%") || s.contains("^") || hasControlChars(s)) {
             return "\"" + escapeControlChars(s) + "\"";
         }
         return s;
