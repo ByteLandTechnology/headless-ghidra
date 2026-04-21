@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,12 +42,23 @@ try {
   process.exit(1);
 }
 
+// Resolve bundled ghidra-scripts directory and expose it to the native binary.
+// Layout: <pkg-root>/ghidra-scripts/  (bundled in the npm package)
+const scriptsDir = path.join(here, "..", "ghidra-scripts");
+const childEnv = { ...process.env };
+if (!childEnv.GHIDRA_SCRIPTS_DIR && existsSync(scriptsDir)) {
+  childEnv.GHIDRA_SCRIPTS_DIR = scriptsDir;
+}
+
 // Keep Node.js alive on SIGINT so the child process (which receives the
 // process-group signal) can clean up first. Without this, Node exits
 // immediately and the child may print cleanup output over the shell prompt.
 process.on("SIGINT", () => {});
 
-const child = spawn(binaryPath, process.argv.slice(2), { stdio: "inherit" });
+const child = spawn(binaryPath, process.argv.slice(2), {
+  stdio: "inherit",
+  env: childEnv,
+});
 child.on("exit", (code, signal) => {
   if (signal) {
     // Remove the no-op SIGINT listener so the self-kill is not swallowed,

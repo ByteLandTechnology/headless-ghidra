@@ -13,6 +13,7 @@
   },
   "files": [
     "bin/",
+    "ghidra-scripts/",
     "README.md"
   ],
   "engines": {

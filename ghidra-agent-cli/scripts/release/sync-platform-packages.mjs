@@ -10,6 +10,7 @@
 
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -114,6 +115,17 @@ mainPkg.version = version;
 mainPkg.bin = { [cliName]: "bin/cli.js" };
 mainPkg.optionalDependencies = optionalDeps;
 writeFileSync(mainPkgPath, `${JSON.stringify(mainPkg, null, 2)}\n`, "utf8");
+
+// Copy ghidra-scripts/ into npm/main/ so the published package bundles them.
+const srcScriptsDir = path.join(rootDir, "ghidra-scripts");
+const dstScriptsDir = path.join(rootDir, "npm", "main", "ghidra-scripts");
+if (existsSync(srcScriptsDir)) {
+  if (existsSync(dstScriptsDir)) rmSync(dstScriptsDir, { recursive: true });
+  cpSync(srcScriptsDir, dstScriptsDir, { recursive: true });
+  console.log("Copied ghidra-scripts/ into npm/main/.");
+} else {
+  console.warn("Warning: ghidra-scripts/ not found at repo root — skipping copy.");
+}
 
 // Fill npm/main/README.md placeholders
 const mainReadmePath = path.join(rootDir, "npm/main/README.md");
