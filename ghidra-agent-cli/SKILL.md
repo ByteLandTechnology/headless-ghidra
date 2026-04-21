@@ -17,9 +17,30 @@ workflow order, stage routing, or orchestration policy. Those are defined by
 
 ## Prerequisites
 
-- Rust toolchain
+- Node.js >= 18
 - Local Ghidra installation discoverable by `ghidra-agent-cli ghidra discover`
 - Optional Frida installation for `frida *` commands
+
+## Installation
+
+<!-- SEMANTIC_RELEASE_VERSION -->
+Install the matching CLI version into the skill directory (not global):
+
+```sh
+cd <skill-directory>
+npm install ghidra-agent-cli@0.0.0-development
+```
+
+This creates `node_modules/.bin/ghidra-agent-cli` — a Node.js wrapper that
+resolves the correct platform-specific binary via optional dependencies
+(`@cli-forge-bin/ghidra-agent-cli-<os>-<cpu>`). Invoke via the full path:
+
+```sh
+./node_modules/.bin/ghidra-agent-cli [COMMAND] [FLAGS]
+```
+
+The version in the `npm install` command is updated automatically by
+semantic-release during publish.
 
 ## Invocation
 

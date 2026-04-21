@@ -72,8 +72,7 @@ impl ScriptRunner {
         let script_path = temp_dir.join(format!("frida_script_{}.js", std::process::id()));
 
         // Build a JSON env block and prepend it; also replace legacy %%KEY%% placeholders
-        let env_json = serde_json::to_string(&self.env_vars)
-            .unwrap_or_else(|_| "{}".to_string());
+        let env_json = serde_json::to_string(&self.env_vars).unwrap_or_else(|_| "{}".to_string());
         let env_block = format!("const __ENV_PARAMS__ = {env_json};\n");
 
         let mut modified_script = script.to_string();

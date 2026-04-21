@@ -120,10 +120,7 @@ pub fn phase_descriptions() -> Vec<PhaseInfo> {
             phase: "P4".into(),
             name: "Batch Decompile".into(),
             checks: vec![
-                (
-                    "P4_01".into(),
-                    "decompilation/progress.yaml exists".into(),
-                ),
+                ("P4_01".into(), "decompilation/progress.yaml exists".into()),
                 (
                     "P4_02".into(),
                     "decompilation/next-batch.yaml exists and non-empty".into(),
@@ -138,10 +135,7 @@ pub fn phase_descriptions() -> Vec<PhaseInfo> {
             phase: "P5".into(),
             name: "Decompile Complete".into(),
             checks: vec![
-                (
-                    "P5_01".into(),
-                    ">= 1 decompiled C file exists".into(),
-                ),
+                ("P5_01".into(), ">= 1 decompiled C file exists".into()),
                 ("P5_02".into(), "coverage >= 10%".into()),
                 (
                     "P5_03".into(),

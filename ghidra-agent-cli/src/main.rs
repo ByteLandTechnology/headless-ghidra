@@ -1360,29 +1360,51 @@ fn validate_baseline_doc(
         id: format!("schema_{schema_name}_target"),
         description: format!("{schema_name}.yaml has 'target' string"),
         passed: has_target,
-        detail: if has_target { None } else { Some("missing 'target' field".into()) },
+        detail: if has_target {
+            None
+        } else {
+            Some("missing 'target' field".into())
+        },
     });
 
-    let has_collection = doc.get(collection_key).and_then(|v| v.as_sequence()).is_some();
+    let has_collection = doc
+        .get(collection_key)
+        .and_then(|v| v.as_sequence())
+        .is_some();
     checks.push(gate::GateCheck {
         id: format!("schema_{schema_name}_{collection_key}"),
         description: format!("{schema_name}.yaml has '{collection_key}' sequence"),
         passed: has_collection,
-        detail: if has_collection { None } else { Some(format!("missing '{collection_key}' sequence")) },
+        detail: if has_collection {
+            None
+        } else {
+            Some(format!("missing '{collection_key}' sequence"))
+        },
     });
 
     if let Some(entries) = doc.get(collection_key).and_then(|v| v.as_sequence()) {
-        let missing: Vec<String> = entries.iter().enumerate()
+        let missing: Vec<String> = entries
+            .iter()
+            .enumerate()
             .filter(|(_, entry)| {
-                required_entry_fields.iter().any(|f| entry.get(*f).is_none())
+                required_entry_fields
+                    .iter()
+                    .any(|f| entry.get(*f).is_none())
             })
             .map(|(i, _)| format!("{collection_key}[{i}]"))
             .collect();
         checks.push(gate::GateCheck {
             id: format!("schema_{schema_name}_required_fields"),
-            description: format!("all {schema_name} entries have required fields ({})", required_entry_fields.join(", ")),
+            description: format!(
+                "all {schema_name} entries have required fields ({})",
+                required_entry_fields.join(", ")
+            ),
             passed: missing.is_empty(),
-            detail: if missing.is_empty() { None } else { Some(format!("missing fields in: {}", missing.join(", "))) },
+            detail: if missing.is_empty() {
+                None
+            } else {
+                Some(format!("missing fields in: {}", missing.join(", ")))
+            },
         });
     }
 }
@@ -1405,8 +1427,11 @@ fn exec_validate(cli: &Cli, args: &ValidateArgs, fmt: Format) -> Result<i32> {
     // Optional schema validation of specific file
     if let Some(schema_name) = &args.schema {
         let ad = workspace::artifact_dir(&ws, &target);
-        let file_path = args.file.as_ref().cloned().unwrap_or_else(|| {
-            match schema_name.as_str() {
+        let file_path = args
+            .file
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| match schema_name.as_str() {
                 "functions" => ad.join("baseline").join("functions.yaml"),
                 "callgraph" => ad.join("baseline").join("callgraph.yaml"),
                 "types" => ad.join("baseline").join("types.yaml"),
@@ -1420,8 +1445,7 @@ fn exec_validate(cli: &Cli, args: &ValidateArgs, fmt: Format) -> Result<i32> {
                 "progress" => ad.join("decompilation").join("progress.yaml"),
                 "identified" => ad.join("third-party").join("identified.yaml"),
                 _ => ad.join(format!("{schema_name}.yaml")),
-            }
-        });
+            });
 
         if !file_path.exists() {
             reports.push(gate::GateReport {
@@ -1449,23 +1473,34 @@ fn exec_validate(cli: &Cli, args: &ValidateArgs, fmt: Format) -> Result<i32> {
                     // Validate top-level structure for known schemas
                     match schema_name.as_str() {
                         "functions" => {
-                            let has_functions = doc.get("functions").and_then(|v| v.as_sequence()).is_some();
+                            let has_functions =
+                                doc.get("functions").and_then(|v| v.as_sequence()).is_some();
                             let has_target = doc.get("target").and_then(|v| v.as_str()).is_some();
                             schema_checks.push(gate::GateCheck {
                                 id: "schema_functions_top_level".into(),
                                 description: "functions.yaml has 'functions' sequence".into(),
                                 passed: has_functions,
-                                detail: if has_functions { None } else { Some("missing 'functions' sequence field".into()) },
+                                detail: if has_functions {
+                                    None
+                                } else {
+                                    Some("missing 'functions' sequence field".into())
+                                },
                             });
                             schema_checks.push(gate::GateCheck {
                                 id: "schema_functions_target".into(),
                                 description: "functions.yaml has 'target' string".into(),
                                 passed: has_target,
-                                detail: if has_target { None } else { Some("missing 'target' field".into()) },
+                                detail: if has_target {
+                                    None
+                                } else {
+                                    Some("missing 'target' field".into())
+                                },
                             });
                             // Validate each function entry has required fields
                             if let Some(fns) = doc.get("functions").and_then(|v| v.as_sequence()) {
-                                let missing: Vec<String> = fns.iter().enumerate()
+                                let missing: Vec<String> = fns
+                                    .iter()
+                                    .enumerate()
                                     .filter(|(_, f)| f.get("addr").is_none())
                                     .map(|(i, _)| format!("functions[{i}]"))
                                     .collect();
@@ -1473,31 +1508,53 @@ fn exec_validate(cli: &Cli, args: &ValidateArgs, fmt: Format) -> Result<i32> {
                                     id: "schema_functions_addr".into(),
                                     description: "all function entries have 'addr'".into(),
                                     passed: missing.is_empty(),
-                                    detail: if missing.is_empty() { None } else { Some(format!("missing addr in: {}", missing.join(", "))) },
+                                    detail: if missing.is_empty() {
+                                        None
+                                    } else {
+                                        Some(format!("missing addr in: {}", missing.join(", ")))
+                                    },
                                 });
                             }
                             if args.strict
-                                && let Some(fns) = doc.get("functions").and_then(|v| v.as_sequence())
+                                && let Some(fns) =
+                                    doc.get("functions").and_then(|v| v.as_sequence())
                             {
-                                    let missing_name: Vec<String> = fns.iter().enumerate()
-                                        .filter(|(_, f)| f.get("name").is_none())
-                                        .map(|(i, _)| format!("functions[{i}]"))
-                                        .collect();
-                                    schema_checks.push(gate::GateCheck {
-                                        id: "schema_functions_name_strict".into(),
-                                        description: "[strict] all function entries have 'name'".into(),
-                                        passed: missing_name.is_empty(),
-                                        detail: if missing_name.is_empty() { None } else { Some(format!("missing name in: {}", missing_name.join(", "))) },
-                                    });
-                                }
+                                let missing_name: Vec<String> = fns
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(_, f)| f.get("name").is_none())
+                                    .map(|(i, _)| format!("functions[{i}]"))
+                                    .collect();
+                                schema_checks.push(gate::GateCheck {
+                                    id: "schema_functions_name_strict".into(),
+                                    description: "[strict] all function entries have 'name'".into(),
+                                    passed: missing_name.is_empty(),
+                                    detail: if missing_name.is_empty() {
+                                        None
+                                    } else {
+                                        Some(format!(
+                                            "missing name in: {}",
+                                            missing_name.join(", ")
+                                        ))
+                                    },
+                                });
+                            }
                         }
                         "scope" => {
-                            let has_entries = doc.get("entries").and_then(|v| v.as_sequence()).map(|s| !s.is_empty()).unwrap_or(false);
+                            let has_entries = doc
+                                .get("entries")
+                                .and_then(|v| v.as_sequence())
+                                .map(|s| !s.is_empty())
+                                .unwrap_or(false);
                             schema_checks.push(gate::GateCheck {
                                 id: "schema_scope_entries".into(),
                                 description: "scope.yaml has non-empty 'entries'".into(),
                                 passed: has_entries,
-                                detail: if has_entries { None } else { Some("missing or empty 'entries'".into()) },
+                                detail: if has_entries {
+                                    None
+                                } else {
+                                    Some("missing or empty 'entries'".into())
+                                },
                             });
                         }
                         "pipeline-state" => {
@@ -1507,43 +1564,95 @@ fn exec_validate(cli: &Cli, args: &ValidateArgs, fmt: Format) -> Result<i32> {
                                     id: format!("schema_pipeline_state_{field}"),
                                     description: format!("pipeline-state.yaml has '{field}'"),
                                     passed: present,
-                                    detail: if present { None } else { Some(format!("missing '{field}'")) },
+                                    detail: if present {
+                                        None
+                                    } else {
+                                        Some(format!("missing '{field}'"))
+                                    },
                                 });
                             }
                         }
                         "target-selection" => {
                             let has_selected = doc.get("selected_target").is_some();
-                            let has_candidates = doc.get("candidates").and_then(|v| v.as_sequence()).is_some();
+                            let has_candidates = doc
+                                .get("candidates")
+                                .and_then(|v| v.as_sequence())
+                                .is_some();
                             schema_checks.push(gate::GateCheck {
                                 id: "schema_target_selection_selected".into(),
                                 description: "target-selection.yaml has 'selected_target'".into(),
                                 passed: has_selected,
-                                detail: if has_selected { None } else { Some("missing 'selected_target'".into()) },
+                                detail: if has_selected {
+                                    None
+                                } else {
+                                    Some("missing 'selected_target'".into())
+                                },
                             });
                             schema_checks.push(gate::GateCheck {
                                 id: "schema_target_selection_candidates".into(),
-                                description: "target-selection.yaml has 'candidates' sequence".into(),
+                                description: "target-selection.yaml has 'candidates' sequence"
+                                    .into(),
                                 passed: has_candidates,
-                                detail: if has_candidates { None } else { Some("missing 'candidates' sequence".into()) },
+                                detail: if has_candidates {
+                                    None
+                                } else {
+                                    Some("missing 'candidates' sequence".into())
+                                },
                             });
                         }
                         "callgraph" => {
-                            validate_baseline_doc(&doc, "callgraph", "edges", &["from", "to"], &mut schema_checks);
+                            validate_baseline_doc(
+                                &doc,
+                                "callgraph",
+                                "edges",
+                                &["from", "to"],
+                                &mut schema_checks,
+                            );
                         }
                         "types" => {
-                            validate_baseline_doc(&doc, "types", "types", &["name", "kind", "definition"], &mut schema_checks);
+                            validate_baseline_doc(
+                                &doc,
+                                "types",
+                                "types",
+                                &["name", "kind", "definition"],
+                                &mut schema_checks,
+                            );
                         }
                         "vtables" => {
-                            validate_baseline_doc(&doc, "vtables", "vtables", &["class", "addr", "entries"], &mut schema_checks);
+                            validate_baseline_doc(
+                                &doc,
+                                "vtables",
+                                "vtables",
+                                &["class", "addr", "entries"],
+                                &mut schema_checks,
+                            );
                         }
                         "constants" => {
-                            validate_baseline_doc(&doc, "constants", "constants", &["addr"], &mut schema_checks);
+                            validate_baseline_doc(
+                                &doc,
+                                "constants",
+                                "constants",
+                                &["addr"],
+                                &mut schema_checks,
+                            );
                         }
                         "strings" => {
-                            validate_baseline_doc(&doc, "strings", "strings", &["addr", "content"], &mut schema_checks);
+                            validate_baseline_doc(
+                                &doc,
+                                "strings",
+                                "strings",
+                                &["addr", "content"],
+                                &mut schema_checks,
+                            );
                         }
                         "imports" => {
-                            validate_baseline_doc(&doc, "imports", "imports", &["library", "symbol"], &mut schema_checks);
+                            validate_baseline_doc(
+                                &doc,
+                                "imports",
+                                "imports",
+                                &["library", "symbol"],
+                                &mut schema_checks,
+                            );
                         }
                         _ => {
                             // Generic: just verify it's valid YAML
@@ -1587,10 +1696,18 @@ fn exec_validate(cli: &Cli, args: &ValidateArgs, fmt: Format) -> Result<i32> {
         }
     }
 
-    let msg = if all_passed { "all gates passed" } else { "some gates failed" };
+    let msg = if all_passed {
+        "all gates passed"
+    } else {
+        "some gates failed"
+    };
     let out = ok_output_with_data(msg, serde_yaml::to_value(&reports)?);
     serialize_value(&mut std::io::stdout(), &out, fmt)?;
-    Ok(if all_passed { EXIT_SUCCESS } else { EXIT_FAILURE })
+    Ok(if all_passed {
+        EXIT_SUCCESS
+    } else {
+        EXIT_FAILURE
+    })
 }
 
 fn exec_paths(cli: &Cli, fmt: Format) -> Result<i32> {
@@ -2608,9 +2725,9 @@ fn exec_gate_list(cli: &Cli, args: &GateListArgs, fmt: Format) -> Result<i32> {
         }))?);
     }
 
-    let all_passed = results.iter().all(|r| {
-        r.get("passed").and_then(|v| v.as_bool()).unwrap_or(false)
-    });
+    let all_passed = results
+        .iter()
+        .all(|r| r.get("passed").and_then(|v| v.as_bool()).unwrap_or(false));
     let msg = if all_passed {
         "all gates passed"
     } else {
@@ -2618,7 +2735,11 @@ fn exec_gate_list(cli: &Cli, args: &GateListArgs, fmt: Format) -> Result<i32> {
     };
     let out = ok_output_with_data(msg, serde_yaml::Value::Sequence(results));
     serialize_value(&mut std::io::stdout(), &out, fmt)?;
-    Ok(if all_passed { EXIT_SUCCESS } else { EXIT_FAILURE })
+    Ok(if all_passed {
+        EXIT_SUCCESS
+    } else {
+        EXIT_FAILURE
+    })
 }
 
 fn exec_gate_show(cli: &Cli, args: &GateShowArgs, fmt: Format) -> Result<i32> {
@@ -2958,7 +3079,9 @@ fn exec_frida_device_attach(_cli: &Cli, args: &DeviceAttachArgs, fmt: Format) ->
     cmd.stdout(std::process::Stdio::inherit());
     cmd.stderr(std::process::Stdio::inherit());
 
-    let status = cmd.status().map_err(|e| anyhow!("failed to run frida: {e}"))?;
+    let status = cmd
+        .status()
+        .map_err(|e| anyhow!("failed to run frida: {e}"))?;
 
     let out = ok_output(&format!(
         "frida attach exited with code {}",
@@ -3735,9 +3858,7 @@ fn dispatch(cli: &Cli, command: &Commands, fmt: Format) -> Result<i32> {
                 exec_frida_device_list(cli, fmt)
             })
         }
-        Commands::Frida(FridaCmd::DeviceAttach(args)) => {
-            exec_frida_device_attach(cli, args, fmt)
-        }
+        Commands::Frida(FridaCmd::DeviceAttach(args)) => exec_frida_device_attach(cli, args, fmt),
         Commands::Frida(FridaCmd::IoCapture(args)) => {
             with_lock(std::path::Path::new("."), None, "frida", || {
                 exec_frida_io_capture(cli, args, fmt)

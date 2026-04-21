@@ -97,8 +97,8 @@ pub fn ghidra_projects_dir(workspace: &Path, target: &str) -> PathBuf {
 /// Priority:
 /// 1. GHIDRA_SCRIPTS_DIR env var
 /// 2. workspace/ghidra-scripts/
-/// 3. CLI's ghidra-scripts/ (parent of targets/)
-/// 4. CWD/ghidra-scripts/
+/// 3. CLI binary's own directory (and its parent)
+/// 4. CWD/ghidra-scripts/ (for running from repo root)
 /// 5. ghidra_dir's built-in scripts
 pub fn resolve_scripts_dir(workspace: &Path, ghidra_dir: &Path) -> PathBuf {
     // 1. Env var override
@@ -113,7 +113,24 @@ pub fn resolve_scripts_dir(workspace: &Path, ghidra_dir: &Path) -> PathBuf {
     if ws_scripts.exists() {
         return ws_scripts;
     }
-    // 3. CLI's ghidra-scripts/ (ghidra-agent-cli/ghidra-scripts)
+    // 3. Walk up from CLI binary's directory to find ghidra-scripts/
+    //    Handles layouts like: <install>/target/release/ghidra-agent-cli
+    //    with scripts at:      <install>/ghidra-scripts/
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(mut dir) = exe.parent()
+    {
+        loop {
+            let candidate = dir.join("ghidra-scripts");
+            if candidate.exists() {
+                return candidate;
+            }
+            dir = match dir.parent() {
+                Some(p) => p,
+                None => break,
+            };
+        }
+    }
+    // 4. CWD-based lookup (for running from repo root)
     if let Ok(cwd) = std::env::current_dir() {
         // Check ghidra-agent-cli/ghidra-scripts (for when running from repo root)
         let cli_scripts = cwd.join("ghidra-agent-cli").join("ghidra-scripts");
@@ -133,7 +150,7 @@ pub fn resolve_scripts_dir(workspace: &Path, ghidra_dir: &Path) -> PathBuf {
             }
         }
     }
-    // 4. Fall back to ghidra's built-in Base scripts (most useful)
+    // 5. Fall back to ghidra's built-in Base scripts (most useful)
     ghidra_dir
         .join("Ghidra")
         .join("Features")

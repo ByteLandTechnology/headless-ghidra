@@ -64,7 +64,8 @@
           "CHANGELOG.md",
           "Cargo.toml",
           "Cargo.lock",
-          "npm/main/package.json"
+          "npm/main/package.json",
+          "SKILL.md"
         ],
         "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"
       }

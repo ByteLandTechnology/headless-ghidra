@@ -130,6 +130,17 @@ if (existsSync(mainReadmePath)) {
   writeFileSync(mainReadmePath, readme, "utf8");
 }
 
+// Update SKILL.md npm install version to match the release
+const skillPath = path.join(rootDir, "SKILL.md");
+if (existsSync(skillPath)) {
+  let skill = readFileSync(skillPath, "utf8");
+  skill = skill.replace(
+    /ghidra-agent-cli@\d+\.\d+\.\d+[\w.-]*/,
+    `ghidra-agent-cli@${version}`,
+  );
+  writeFileSync(skillPath, skill, "utf8");
+}
+
 console.log(
   `Synced ${config.targets.length} platform packages for ${mainPackageName}@${version}.`,
 );
