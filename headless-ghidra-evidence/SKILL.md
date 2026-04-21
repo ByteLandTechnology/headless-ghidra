@@ -15,7 +15,9 @@ optional Frida observations when static evidence is insufficient.
 - `ghidra-agent-cli functions list`
 - `ghidra-agent-cli functions show`
 - `ghidra-agent-cli imports list`
+- `ghidra-agent-cli constants list`
 - `ghidra-agent-cli strings list`
+- `ghidra-agent-cli vtables list`
 - `ghidra-agent-cli types list`
 - `ghidra-agent-cli callgraph list`
 - `ghidra-agent-cli callgraph callers`
@@ -39,6 +41,7 @@ Optional runtime supplementation may also use:
 - `artifacts/<target-id>/baseline/callgraph.yaml`
 - `artifacts/<target-id>/baseline/types.yaml`
 - `artifacts/<target-id>/baseline/constants.yaml`
+- `artifacts/<target-id>/baseline/vtables.yaml`
 - `artifacts/<target-id>/baseline/strings.yaml`
 - `artifacts/<target-id>/baseline/imports.yaml`
 - Existing `artifacts/<target-id>/third-party/identified.yaml` if present

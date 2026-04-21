@@ -49,4 +49,4 @@ run as backend details until the CLI exposes them directly.
 
 ## Next Step
 
-- P0 gate passes → `headless-ghidra-baseline`
+- P0 gate passes → `headless-ghidra-scope`

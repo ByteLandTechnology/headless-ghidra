@@ -37,8 +37,8 @@ P0 Intake → P1 Baseline → P2 Evidence → [P3 Discovery → P4+P5 Decompile 
 - P3–P6 form the iteration loop.
 - `ghidra-agent-cli` is the required control-plane interface for supported
   operations.
-- `gate-check.sh` remains the workflow gate authority; `ghidra-agent-cli gate
-  check` provides the CLI-facing gate surface where supported.
+- `ghidra-agent-cli gate check` is the authoritative gate validation for all
+  pipeline phases (P0–P6). The legacy `gate-check.sh` has been removed.
 
 ## Shared Workspace Model
 

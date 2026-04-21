@@ -5,7 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${SKILL_DIR}/.." && pwd)"
 RUNNER="${SCRIPT_DIR}/run-headless-analysis.sh"
-GATE_CHECK="${SCRIPT_DIR}/gate-check.sh"
 
 TARGET_ID="placeholder-repro"
 BINARY_PATH=""
@@ -235,11 +234,9 @@ if ! rg -n 'Selected decompilation only exported the unavailable placeholder\.' 
 fi
 
 gate_status=0
-"${GATE_CHECK}" \
-  --gate P5 \
-  --artifact-root "${ARTIFACT_ROOT}" \
-  --iteration 001 \
-  --function fn_001 || gate_status=$?
+ghidra-agent-cli gate check \
+  --phase P5 \
+  --target "${TARGET_ID}" || gate_status=$?
 
 if [[ "${gate_status}" -eq 0 ]]; then
   printf 'Expected P5 gate to fail for placeholder-only export, but it passed.\n' >&2
