@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.2.0...v1.3.0) (2026-04-22)
+
+### Features
+
+* **ghidra-agent-cli:** use SnakeYAML for script parsing ([d4f5c05](https://github.com/ByteLandTechnology/headless-ghidra/commit/d4f5c0552f0e0e2e97f54a70b618fa46b29a41f3))
+
 ## [1.2.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.1.2...v1.2.0) (2026-04-22)
 
 ### Features
