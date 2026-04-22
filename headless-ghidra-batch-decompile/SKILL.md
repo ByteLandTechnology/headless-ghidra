@@ -24,6 +24,8 @@ approved Ghidra decompilation path, and records per-function artifacts.
 
 Queueing via `ghidra-queue.sh` and Java/headless helpers remains a backend
 detail. The public workflow surface is the CLI plus the YAML outputs below.
+When `decompilation/next-batch.yaml` is ready, prefer `ghidra-agent-cli ghidra decompile --batch`
+over per-function decompile loops.
 
 ## Inputs
 

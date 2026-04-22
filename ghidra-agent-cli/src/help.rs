@@ -126,12 +126,30 @@ fn opt_output() -> HelpOption {
     }
 }
 
-fn opt_function() -> HelpOption {
+fn opt_fn_id() -> HelpOption {
     HelpOption {
-        name: "--function".into(),
-        value_name: "ADDR|NAME".into(),
+        name: "--fn-id".into(),
+        value_name: "ID".into(),
         default_value: String::new(),
-        description: "Function address or name selector".into(),
+        description: "Function directory identifier (for example fn_001)".into(),
+    }
+}
+
+fn opt_addr() -> HelpOption {
+    HelpOption {
+        name: "--addr".into(),
+        value_name: "ADDR".into(),
+        default_value: String::new(),
+        description: "Function address to decompile".into(),
+    }
+}
+
+fn opt_batch() -> HelpOption {
+    HelpOption {
+        name: "--batch".into(),
+        value_name: String::new(),
+        default_value: "false".into(),
+        description: "Decompile every entry from decompilation/next-batch.yaml".into(),
     }
 }
 
@@ -1167,40 +1185,39 @@ pub fn structured_help(path: &[String]) -> Option<HelpDocument> {
             arguments: vec![],
             options: vec![
                 opt_workspace(),
-                opt_function(),
+                opt_target(),
+                opt_fn_id(),
+                opt_addr(),
+                opt_batch(),
                 opt_format(),
-                opt_output(),
-                HelpOption {
-                    name: "--all".into(),
-                    value_name: String::new(),
-                    default_value: "false".into(),
-                    description: "Decompile all functions in scope".into(),
-                },
             ],
             subcommands: vec![],
             output_formats: standard_formats(),
             exit_behavior: standard_exit_codes(),
             description: vec![
-                "Runs the Ghidra headless decompiler for the selected function(s)".into(),
-                "and writes the resulting C source to the workspace. When --all is".into(),
-                "given every function in the current scope is decompiled.".into(),
+                "Runs the Ghidra headless decompiler for a single function".into(),
+                "selected by --fn-id and --addr, or for the current batch when".into(),
+                "--batch is given.".into(),
                 String::new(),
-                "Decompiled output is stored under decompiled/ in the workspace.".into(),
+                "Batch mode reads artifacts/<target>/decompilation/next-batch.yaml".into(),
+                "and processes entries in order without rewriting that file.".into(),
             ],
             examples: vec![
                 HelpExample {
-                    command: format!("{SKILL_NAME} ghidra decompile --function main"),
-                    description: "Decompile main()".into(),
+                    command: format!(
+                        "{SKILL_NAME} ghidra decompile --target libfoo --fn-id fn_001 --addr 0x401000"
+                    ),
+                    description: "Decompile one selected function".into(),
                 },
                 HelpExample {
-                    command: format!("{SKILL_NAME} ghidra decompile --all"),
-                    description: "Decompile all functions in scope".into(),
+                    command: format!("{SKILL_NAME} ghidra decompile --target libfoo --batch"),
+                    description: "Decompile the current next-batch worklist".into(),
                 },
                 HelpExample {
                     command: format!(
-                        "{SKILL_NAME} ghidra decompile --function 0x401000 --format json"
+                        "{SKILL_NAME} ghidra decompile --target libfoo --fn-id fn_001 --addr 0x401000 --format json"
                     ),
-                    description: "Decompile at address, JSON output".into(),
+                    description: "Decompile one function with JSON output".into(),
                 },
             ],
         }),
@@ -1594,8 +1611,9 @@ mod tests {
     fn ghidra_decompile() {
         let doc =
             structured_help(&["ghidra".into(), "decompile".into()]).expect("ghidra decompile help");
-        assert!(doc.options.iter().any(|o| o.name == "--function"));
-        assert!(doc.options.iter().any(|o| o.name == "--all"));
+        assert!(doc.options.iter().any(|o| o.name == "--fn-id"));
+        assert!(doc.options.iter().any(|o| o.name == "--addr"));
+        assert!(doc.options.iter().any(|o| o.name == "--batch"));
     }
 
     #[test]

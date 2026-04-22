@@ -192,6 +192,7 @@ ghidra-agent-cli --target libfoo functions list
 
 # Progress and gate checks
 ghidra-agent-cli --target libfoo progress compute-next-batch --max 8
+ghidra-agent-cli --target libfoo ghidra decompile --batch
 ghidra-agent-cli --target libfoo gate check --phase P1
 
 # Frida helpers

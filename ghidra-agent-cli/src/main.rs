@@ -970,6 +970,8 @@ pub struct GhidraDecompileArgs {
     pub fn_id: Option<String>,
     #[arg(long)]
     pub addr: Option<String>,
+    #[arg(long)]
+    pub batch: bool,
 }
 
 #[derive(Args, Debug)]
@@ -1282,7 +1284,7 @@ EXAMPLES
     ghidra-agent-cli workspace init --target libfoo --binary ./libfoo.so
     ghidra-agent-cli --target libfoo gate check --phase P1
     ghidra-agent-cli --target libfoo functions list
-    ghidra-agent-cli --target libfoo ghidra decompile --fn-id fn_001
+    ghidra-agent-cli --target libfoo ghidra decompile --fn-id fn_001 --addr 0x401000
     ghidra-agent-cli paths
     ghidra-agent-cli help gate check
 "#
@@ -2614,16 +2616,13 @@ fn exec_progress_mark_decompiled(
 ) -> Result<i32> {
     let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
     let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
-    let mut prog = progress::load_progress(&ws, &target)?;
-    prog.functions.push(progress::ProgressEntry {
-        fn_id: args.fn_id.clone(),
-        addr: args.addr.clone(),
-        state: "decompiled".to_string(),
-        backend: args.backend.clone().unwrap_or_else(|| "ghidra".to_string()),
-        verification: None,
-        decompiled_at: Some(chrono::Utc::now().to_rfc3339()),
-    });
-    progress::save_progress(&ws, &target, &prog)?;
+    progress::mark_function_decompiled(
+        &ws,
+        &target,
+        &args.fn_id,
+        &args.addr,
+        args.backend.as_deref().unwrap_or("ghidra"),
+    )?;
     let out = ok_output(&format!("function {} marked as decompiled", args.fn_id));
     serialize_value(&mut std::io::stdout(), &out, fmt)?;
     Ok(EXIT_SUCCESS)
@@ -2985,38 +2984,154 @@ fn exec_ghidra_verify_signatures(
 fn exec_ghidra_decompile(cli: &Cli, args: &GhidraDecompileArgs, fmt: Format) -> Result<i32> {
     let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
     let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+
+    if args.batch {
+        if args.fn_id.is_some() || args.addr.is_some() {
+            return Err(anyhow!("--batch cannot be combined with --fn-id or --addr"));
+        }
+    } else if args.fn_id.is_none() || args.addr.is_none() {
+        return Err(anyhow!(
+            "--fn-id and --addr are required unless --batch is set"
+        ));
+    }
+
+    if args.batch {
+        let next_batch = progress::load_next_batch(&ws, &target)?;
+        let ghidra_dir = ghidra::discover_ghidra(None)?;
+        let project_dir = ghidra::ghidra_projects_dir(&ws, &target);
+        let binary_name = decompile_binary_name(&ws, &target)?;
+        let mut results = Vec::with_capacity(next_batch.batch.len());
+
+        for entry in &next_batch.batch {
+            match run_ghidra_decompile_function(
+                &ws,
+                &target,
+                &ghidra_dir,
+                &project_dir,
+                &binary_name,
+                &entry.fn_id,
+                &entry.addr,
+            ) {
+                Ok(()) => {
+                    progress::mark_function_decompiled(
+                        &ws,
+                        &target,
+                        &entry.fn_id,
+                        &entry.addr,
+                        "ghidra",
+                    )?;
+                    results.push(DecompileBatchResult {
+                        fn_id: entry.fn_id.clone(),
+                        addr: entry.addr.clone(),
+                        status: "ok".to_string(),
+                        error: None,
+                    });
+                }
+                Err(err) => {
+                    results.push(DecompileBatchResult {
+                        fn_id: entry.fn_id.clone(),
+                        addr: entry.addr.clone(),
+                        status: "failed".to_string(),
+                        error: Some(err.to_string()),
+                    });
+                }
+            }
+        }
+
+        let failed = results.iter().filter(|r| r.status == "failed").count();
+        let summary = DecompileBatchSummary {
+            target: target.clone(),
+            requested: results.len(),
+            succeeded: results.len().saturating_sub(failed),
+            failed,
+            results,
+        };
+        let message = if failed == 0 {
+            format!("batch decompilation complete for target '{}'", target)
+        } else {
+            format!(
+                "batch decompilation completed with {} failure(s) for target '{}'",
+                failed, target
+            )
+        };
+        let out = ok_output_with_data(&message, serde_yaml::to_value(&summary)?);
+        serialize_value(&mut std::io::stdout(), &out, fmt)?;
+        return Ok(if failed == 0 {
+            EXIT_SUCCESS
+        } else {
+            EXIT_FAILURE
+        });
+    }
+
     let ghidra_dir = ghidra::discover_ghidra(None)?;
     let project_dir = ghidra::ghidra_projects_dir(&ws, &target);
-    let state = workspace::load_pipeline_state(&ws, &target)?;
-    let binary_path = state
-        .binary
-        .ok_or_else(|| anyhow!("binary path not recorded for target '{}'", target))?;
-    let binary_name = Path::new(&binary_path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| anyhow!("invalid binary path '{}'", binary_path))?;
+    let binary_name = decompile_binary_name(&ws, &target)?;
 
-    let fn_id = args
-        .fn_id
-        .as_ref()
-        .ok_or_else(|| anyhow!("--fn-id is required"))?;
-    let addr = args
-        .addr
-        .as_ref()
-        .ok_or_else(|| anyhow!("--addr is required"))?;
+    let fn_id = args.fn_id.as_ref().expect("validated above");
+    let addr = args.addr.as_ref().expect("validated above");
 
-    ghidra::run_headless_with_program(
+    run_ghidra_decompile_function(
         &ws,
+        &target,
         &ghidra_dir,
         &project_dir,
-        &target,
-        "DecompileFunction.java",
-        &[addr.as_str(), fn_id.as_str()],
-        Some(binary_name),
+        &binary_name,
+        fn_id,
+        addr,
     )?;
     let out = ok_output(&format!("decompilation complete for target '{}'", target));
     serialize_value(&mut std::io::stdout(), &out, fmt)?;
     Ok(EXIT_SUCCESS)
+}
+
+#[derive(Debug, Serialize)]
+struct DecompileBatchResult {
+    fn_id: String,
+    addr: String,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct DecompileBatchSummary {
+    target: String,
+    requested: usize,
+    succeeded: usize,
+    failed: usize,
+    results: Vec<DecompileBatchResult>,
+}
+
+fn decompile_binary_name(ws: &Path, target: &str) -> Result<String> {
+    let state = workspace::load_pipeline_state(ws, target)?;
+    let binary_path = state
+        .binary
+        .ok_or_else(|| anyhow!("binary path not recorded for target '{}'", target))?;
+    Path::new(&binary_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|name| name.to_string())
+        .ok_or_else(|| anyhow!("invalid binary path '{}'", binary_path))
+}
+
+fn run_ghidra_decompile_function(
+    ws: &Path,
+    target: &str,
+    ghidra_dir: &Path,
+    project_dir: &Path,
+    binary_name: &str,
+    fn_id: &str,
+    addr: &str,
+) -> Result<()> {
+    ghidra::run_headless_with_program(
+        ws,
+        ghidra_dir,
+        project_dir,
+        target,
+        "DecompileFunction.java",
+        &[addr, fn_id],
+        Some(binary_name),
+    )
 }
 
 fn exec_ghidra_rebuild_project(
