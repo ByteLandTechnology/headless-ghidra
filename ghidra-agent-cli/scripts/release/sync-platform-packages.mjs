@@ -43,6 +43,7 @@ const config = readReleaseConfig(rootDir);
 const repoUrl = `https://github.com/${config.sourceRepository}`;
 const BUNDLED_ENTRY_SCRIPT = "GhidraAgentCliEntry.java";
 const BUNDLED_SCRIPT_JAR = "ghidra-agent-cli-ghidra-scripts.jar";
+const BUNDLED_DEPENDENCY_JARS = ["snakeyaml-2.6.jar"];
 
 // Delegate all field/scope validation to the shared script so the checks
 // are identical in CI (release.yml) and local runs (sync-platform-packages).
@@ -68,7 +69,11 @@ mkdirSync(platformsDir, { recursive: true });
 const optionalDeps = {};
 
 function assertBundleContents(bundleDir) {
-  const required = [BUNDLED_ENTRY_SCRIPT, BUNDLED_SCRIPT_JAR];
+  const required = [
+    BUNDLED_ENTRY_SCRIPT,
+    BUNDLED_SCRIPT_JAR,
+    ...BUNDLED_DEPENDENCY_JARS,
+  ];
   for (const relPath of required) {
     const fullPath = path.join(bundleDir, relPath);
     if (!existsSync(fullPath)) {
@@ -110,6 +115,7 @@ function assertMainPackageBundlesScripts(mainPkgDir) {
     for (const relPath of [
       `ghidra-script-bundle/${BUNDLED_ENTRY_SCRIPT}`,
       `ghidra-script-bundle/${BUNDLED_SCRIPT_JAR}`,
+      ...BUNDLED_DEPENDENCY_JARS.map((name) => `ghidra-script-bundle/${name}`),
     ]) {
       if (!packedPaths.has(relPath)) {
         throw new Error(

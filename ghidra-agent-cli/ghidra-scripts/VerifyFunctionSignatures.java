@@ -25,7 +25,7 @@ public class VerifyFunctionSignatures extends GhidraScript {
         Path outPath = Paths.get(workspace, "artifacts", target, "gates", "p5-verify-sigs.yaml");
         Files.createDirectories(outPath.getParent());
 
-        List<Map<String, String>> types = parseTypesYaml(yamlPath);
+        List<YamlParsers.TypeEntry> types = YamlParsers.loadTypes(yamlPath);
         StringBuilder yaml = new StringBuilder();
         yaml.append("target: ").append(escapeYaml(target)).append("\n");
         yaml.append("phase: P5\n");
@@ -37,12 +37,12 @@ public class VerifyFunctionSignatures extends GhidraScript {
 
         FunctionManager funcMgr = currentProgram.getFunctionManager();
 
-        for (Map<String, String> entry : types) {
-            String kind = entry.get("kind");
+        for (YamlParsers.TypeEntry entry : types) {
+            String kind = entry.getKind();
             if (!"function".equals(kind)) continue;
 
-            String name = entry.get("name");
-            String expectedDef = entry.get("definition");
+            String name = entry.getName();
+            String expectedDef = entry.getDefinition();
 
             if (name == null || expectedDef == null) continue;
 
@@ -78,41 +78,6 @@ public class VerifyFunctionSignatures extends GhidraScript {
         Files.writeString(outPath, yaml.toString());
         println("VerifyFunctionSignatures: " + matched + " matched, " + mismatched + " mismatched");
     }
-
-    private List<Map<String, String>> parseTypesYaml(Path yamlPath) throws IOException {
-        List<Map<String, String>> result = new ArrayList<>();
-        List<String> lines = Files.readAllLines(yamlPath);
-        Map<String, String> current = null;
-        for (String line : lines) {
-            if (line.startsWith("  - name:")) {
-                if (current != null) result.add(current);
-                current = new HashMap<>();
-                current.put("name", extractYamlValue(line));
-            } else if (line.startsWith("    kind:") && current != null) {
-                current.put("kind", extractYamlValue(line));
-            } else if (line.startsWith("    definition:") && current != null) {
-                current.put("definition", extractYamlValue(line));
-            }
-        }
-        if (current != null) result.add(current);
-        return result;
-    }
-
-    private String extractYamlValue(String line) {
-        int colon = line.indexOf(':');
-        if (colon < 0) return "";
-        String val = line.substring(colon + 1).trim();
-        // Handle double-quoted strings: "value"
-        if (val.startsWith("\"") && val.endsWith("\"")) {
-            val = val.substring(1, val.length() - 1);
-        }
-        // Handle single-quoted strings: 'value' (serde_yaml may output this)
-        else if (val.startsWith("'") && val.endsWith("'")) {
-            val = val.substring(1, val.length() - 1);
-        }
-        return val;
-    }
-
     private String escapeYaml(String s) {
         if (s == null) return "\"\"";
         if (s.contains(":") || s.contains("\"") || s.contains("\n") || s.startsWith(" ") || s.endsWith(" ") || s.contains("#") || s.equals("") || hasControlChars(s)) {

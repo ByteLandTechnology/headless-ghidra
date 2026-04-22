@@ -25,7 +25,7 @@ public class VerifyRenames extends GhidraScript {
         Path outPath = Paths.get(workspace, "artifacts", target, "gates", "p2-verify-renames.yaml");
         Files.createDirectories(outPath.getParent());
 
-        List<Map<String, String>> functions = parseFunctionsYaml(yamlPath);
+        List<YamlParsers.FunctionEntry> functions = YamlParsers.loadFunctions(yamlPath);
         int matched = 0;
         int mismatched = 0;
         StringBuilder yaml = new StringBuilder();
@@ -36,13 +36,13 @@ public class VerifyRenames extends GhidraScript {
 
         FunctionManager funcMgr = currentProgram.getFunctionManager();
 
-        for (Map<String, String> funcEntry : functions) {
-            String addrStr = funcEntry.get("addr");
-            String expectedName = funcEntry.get("name");
+        for (YamlParsers.FunctionEntry funcEntry : functions) {
+            String addrStr = AddressFormats.normalizeAddress(funcEntry.getAddrValue());
+            String expectedName = funcEntry.getName();
 
             if (addrStr == null) continue;
 
-            Address addr = currentProgram.getAddressFactory().getAddress(addrStr);
+            Address addr = AddressFormats.resolveAddress(currentProgram.getAddressFactory(), funcEntry.getAddrValue());
             if (addr == null) continue;
 
             Function func = funcMgr.getFunctionAt(addr);
@@ -70,39 +70,6 @@ public class VerifyRenames extends GhidraScript {
         Files.writeString(outPath, yaml.toString());
         println("VerifyRenames: " + matched + " matched, " + mismatched + " mismatched");
     }
-
-    private List<Map<String, String>> parseFunctionsYaml(Path yamlPath) throws IOException {
-        List<Map<String, String>> result = new ArrayList<>();
-        List<String> lines = Files.readAllLines(yamlPath);
-        Map<String, String> current = null;
-        for (String line : lines) {
-            if (line.startsWith("  - addr:")) {
-                if (current != null) result.add(current);
-                current = new HashMap<>();
-                current.put("addr", extractYamlValue(line));
-            } else if (line.startsWith("    name:") && current != null) {
-                current.put("name", extractYamlValue(line));
-            }
-        }
-        if (current != null) result.add(current);
-        return result;
-    }
-
-    private String extractYamlValue(String line) {
-        int colon = line.indexOf(':');
-        if (colon < 0) return "";
-        String val = line.substring(colon + 1).trim();
-        // Handle double-quoted strings: "value"
-        if (val.startsWith("\"") && val.endsWith("\"")) {
-            val = val.substring(1, val.length() - 1);
-        }
-        // Handle single-quoted strings: 'value' (serde_yaml may output this)
-        else if (val.startsWith("'") && val.endsWith("'")) {
-            val = val.substring(1, val.length() - 1);
-        }
-        return val;
-    }
-
     private String escapeYaml(String s) {
         if (s == null) return "\"\"";
         if (s.contains(":") || s.contains("\"") || s.contains("\n") || s.startsWith(" ") || s.endsWith(" ") || s.contains("#") || s.equals("") || hasControlChars(s)) {

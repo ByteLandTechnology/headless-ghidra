@@ -62,6 +62,8 @@ OUTPUT_DIR="$(cd "${OUTPUT_DIR}" && pwd -P)"
 BUNDLE_JAR="${OUTPUT_DIR}/ghidra-agent-cli-ghidra-scripts.jar"
 STAMP_FILE="${OUTPUT_DIR}/.bundle.stamp"
 ENTRY_SCRIPT_NAME="GhidraAgentCliEntry.java"
+LIB_DIR="${SOURCE_DIR}/lib"
+SNAKEYAML_JAR="${LIB_DIR}/snakeyaml-2.6.jar"
 
 choose_javac() {
   local candidates=()
@@ -131,6 +133,10 @@ build_classpath() {
     done < <(find "${root}" -type f -name '*.jar' | sort)
   done
 
+  if [[ -f "${SNAKEYAML_JAR}" ]]; then
+    jars+=("${SNAKEYAML_JAR}")
+  fi
+
   if [[ ${#jars[@]} -eq 0 ]]; then
     return 1
   fi
@@ -152,6 +158,9 @@ needs_rebuild() {
   if find "${SOURCE_DIR}" -maxdepth 1 -type f \( -name '*.java' -o -name 'build-bundle.sh' \) -newer "${STAMP_FILE}" | grep -q .; then
     return 0
   fi
+  if [[ -f "${SNAKEYAML_JAR}" && "${SNAKEYAML_JAR}" -nt "${STAMP_FILE}" ]]; then
+    return 0
+  fi
   return 1
 }
 
@@ -161,6 +170,11 @@ CLASSPATH="$(build_classpath || true)"
 
 if [[ -z "${JAVAC}" || -z "${JAR_TOOL}" || -z "${CLASSPATH}" ]]; then
   printf 'Skipping bundle build: javac/jar or Ghidra jars not available.\n' >&2
+  exit 1
+fi
+
+if [[ ! -f "${SNAKEYAML_JAR}" ]]; then
+  printf 'Missing vendored SnakeYAML jar: %s\n' "${SNAKEYAML_JAR}" >&2
   exit 1
 fi
 
@@ -181,9 +195,14 @@ find "${OUTPUT_DIR}" -maxdepth 1 -type f \
   \( -name '*.java' -o -name '*.jar' -o -name '.bundle.stamp' \) \
   -delete
 
+cp "${SNAKEYAML_JAR}" "${OUTPUT_DIR}/"
+
 while IFS= read -r source_file; do
   base_name="$(basename "${source_file}" .java)"
-  impl_file="${IMPL_SRC_DIR}/${base_name}Impl.java"
+  impl_file="${IMPL_SRC_DIR}/${base_name}.java"
+  if grep -Eq "public class ${base_name}[[:space:]]+extends[[:space:]]+GhidraScript" "${source_file}"; then
+    impl_file="${IMPL_SRC_DIR}/${base_name}Impl.java"
+  fi
 
   {
     printf 'package ghidra_agent_cli.bundle.impl;\n\n'
@@ -211,7 +230,10 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 
 public class GhidraAgentCliEntry extends GhidraScript {
     private static final String BUNDLE_JAR_NAME = "ghidra-agent-cli-ghidra-scripts.jar";
@@ -230,7 +252,7 @@ public class GhidraAgentCliEntry extends GhidraScript {
         runBundled(implClassName, implArgs);
     }
 
-    private File resolveBundleJar() throws IOException {
+    private File resolveBundleDir() throws IOException {
         ResourceFile currentSourceFile = getSourceFile();
         if (currentSourceFile == null) {
             throw new IllegalStateException("Bundled wrapper source file is unavailable");
@@ -242,7 +264,29 @@ public class GhidraAgentCliEntry extends GhidraScript {
                 "Bundled wrapper parent directory is unavailable: " + currentSourceFile);
         }
 
-        return new File(parentDir.getCanonicalPath(), BUNDLE_JAR_NAME);
+        return new File(parentDir.getCanonicalPath());
+    }
+
+    private URL[] resolveBundleUrls() throws IOException {
+        File bundleDir = resolveBundleDir();
+        File bundleJar = new File(bundleDir, BUNDLE_JAR_NAME);
+        if (!bundleJar.isFile()) {
+            throw new IllegalStateException("Bundled script jar not found: " + bundleJar);
+        }
+
+        List<URL> urls = new ArrayList<>();
+        urls.add(bundleJar.toURI().toURL());
+
+        File[] siblingJars = bundleDir.listFiles((dir, name) ->
+            name.endsWith(".jar") && !BUNDLE_JAR_NAME.equals(name));
+        if (siblingJars != null) {
+            Arrays.sort(siblingJars, Comparator.comparing(File::getName));
+            for (File jar : siblingJars) {
+                urls.add(jar.toURI().toURL());
+            }
+        }
+
+        return urls.toArray(new URL[0]);
     }
 
     private String resolveImplementationClassName(String logicalScriptName) {
@@ -264,18 +308,13 @@ public class GhidraAgentCliEntry extends GhidraScript {
     }
 
     private void runBundled(String implClassName, String[] implArgs) throws Exception {
-        File bundleJar = resolveBundleJar();
-        if (!bundleJar.isFile()) {
-            throw new IllegalStateException("Bundled script jar not found: " + bundleJar);
-        }
-
         ClassLoader parentLoader = Thread.currentThread().getContextClassLoader();
         if (parentLoader == null) {
             parentLoader = GhidraAgentCliEntry.class.getClassLoader();
         }
 
         try (URLClassLoader loader = new URLClassLoader(
-                new URL[] { bundleJar.toURI().toURL() },
+                resolveBundleUrls(),
                 parentLoader)) {
             Class<?> implClass = Class.forName(implClassName, true, loader);
             Object impl = implClass.getDeclaredConstructor().newInstance();

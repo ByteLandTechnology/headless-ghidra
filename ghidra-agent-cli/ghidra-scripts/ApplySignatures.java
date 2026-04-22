@@ -26,18 +26,18 @@ public class ApplySignatures extends GhidraScript {
             throw new IOException("types.yaml not found: " + yamlPath);
         }
 
-        List<Map<String, String>> types = parseTypesYaml(yamlPath);
+        List<YamlParsers.TypeEntry> types = YamlParsers.loadTypes(yamlPath);
         int applied = 0;
         int failed = 0;
 
         FunctionManager funcMgr = currentProgram.getFunctionManager();
 
-        for (Map<String, String> entry : types) {
-            String kind = entry.get("kind");
+        for (YamlParsers.TypeEntry entry : types) {
+            String kind = entry.getKind();
             if (!"function".equals(kind)) continue;
 
-            String name = entry.get("name");
-            String definition = entry.get("definition");
+            String name = entry.getName();
+            String definition = entry.getDefinition();
 
             if (name == null || definition == null) continue;
 
@@ -67,39 +67,5 @@ public class ApplySignatures extends GhidraScript {
         }
 
         println("ApplySignatures: " + applied + " applied, " + failed + " failed");
-    }
-
-    private List<Map<String, String>> parseTypesYaml(Path yamlPath) throws IOException {
-        List<Map<String, String>> result = new ArrayList<>();
-        List<String> lines = Files.readAllLines(yamlPath);
-        Map<String, String> current = null;
-        for (String line : lines) {
-            if (line.startsWith("  - name:")) {
-                if (current != null) result.add(current);
-                current = new HashMap<>();
-                current.put("name", extractYamlValue(line));
-            } else if (line.startsWith("    kind:") && current != null) {
-                current.put("kind", extractYamlValue(line));
-            } else if (line.startsWith("    definition:") && current != null) {
-                current.put("definition", extractYamlValue(line));
-            }
-        }
-        if (current != null) result.add(current);
-        return result;
-    }
-
-    private String extractYamlValue(String line) {
-        int colon = line.indexOf(':');
-        if (colon < 0) return "";
-        String val = line.substring(colon + 1).trim();
-        // Handle double-quoted strings: "value"
-        if (val.startsWith("\"") && val.endsWith("\"")) {
-            val = val.substring(1, val.length() - 1);
-        }
-        // Handle single-quoted strings: 'value' (serde_yaml may output this)
-        else if (val.startsWith("'") && val.endsWith("'")) {
-            val = val.substring(1, val.length() - 1);
-        }
-        return val;
     }
 }

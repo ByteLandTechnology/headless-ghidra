@@ -35,11 +35,11 @@ public class LintReviewArtifacts extends GhidraScript {
         // Lint functions.yaml
         Path fnYaml = Paths.get(workspace, "artifacts", target, "baseline", "functions.yaml");
         if (Files.exists(fnYaml)) {
-            List<Map<String, String>> functions = parseFunctionsYaml(fnYaml);
+            List<YamlParsers.FunctionEntry> functions = YamlParsers.loadFunctions(fnYaml);
             for (int i = 0; i < functions.size(); i++) {
-                Map<String, String> f = functions.get(i);
-                String addr = f.get("addr");
-                String name = f.get("name");
+                YamlParsers.FunctionEntry f = functions.get(i);
+                String addr = f.getAddr();
+                String name = f.getName();
 
                 if (addr == null || addr.isEmpty()) {
                     yaml.append("  - severity: error\n");
@@ -61,11 +61,11 @@ public class LintReviewArtifacts extends GhidraScript {
         // Lint types.yaml
         Path typesYaml = Paths.get(workspace, "artifacts", target, "baseline", "types.yaml");
         if (Files.exists(typesYaml)) {
-            List<Map<String, String>> types = parseTypesYaml(typesYaml);
+            List<YamlParsers.TypeEntry> types = YamlParsers.loadTypes(typesYaml);
             for (int i = 0; i < types.size(); i++) {
-                Map<String, String> t = types.get(i);
-                String name = t.get("name");
-                String kind = t.get("kind");
+                YamlParsers.TypeEntry t = types.get(i);
+                String name = t.getName();
+                String kind = t.getKind();
                 if (name == null || name.isEmpty()) {
                     yaml.append("  - severity: error\n");
                     yaml.append("    file: types.yaml\n");
@@ -91,58 +91,6 @@ public class LintReviewArtifacts extends GhidraScript {
         Files.writeString(outPath, yaml.toString());
         println("LintReviewArtifacts: " + (hasIssues ? "issues found" : "clean"));
     }
-
-    private List<Map<String, String>> parseFunctionsYaml(Path yamlPath) throws IOException {
-        List<Map<String, String>> result = new ArrayList<>();
-        List<String> lines = Files.readAllLines(yamlPath);
-        Map<String, String> current = null;
-        for (String line : lines) {
-            if (line.startsWith("  - addr:")) {
-                if (current != null) result.add(current);
-                current = new HashMap<>();
-                current.put("addr", extractYamlValue(line));
-            } else if (line.startsWith("    name:") && current != null) {
-                current.put("name", extractYamlValue(line));
-            }
-        }
-        if (current != null) result.add(current);
-        return result;
-    }
-
-    private List<Map<String, String>> parseTypesYaml(Path yamlPath) throws IOException {
-        List<Map<String, String>> result = new ArrayList<>();
-        List<String> lines = Files.readAllLines(yamlPath);
-        Map<String, String> current = null;
-        for (String line : lines) {
-            if (line.startsWith("  - name:")) {
-                if (current != null) result.add(current);
-                current = new HashMap<>();
-                current.put("name", extractYamlValue(line));
-            } else if (line.startsWith("    kind:") && current != null) {
-                current.put("kind", extractYamlValue(line));
-            } else if (line.startsWith("    definition:") && current != null) {
-                current.put("definition", extractYamlValue(line));
-            }
-        }
-        if (current != null) result.add(current);
-        return result;
-    }
-
-    private String extractYamlValue(String line) {
-        int colon = line.indexOf(':');
-        if (colon < 0) return "";
-        String val = line.substring(colon + 1).trim();
-        // Handle double-quoted strings: "value"
-        if (val.startsWith("\"") && val.endsWith("\"")) {
-            val = val.substring(1, val.length() - 1);
-        }
-        // Handle single-quoted strings: 'value' (serde_yaml may output this)
-        else if (val.startsWith("'") && val.endsWith("'")) {
-            val = val.substring(1, val.length() - 1);
-        }
-        return val;
-    }
-
     private boolean isValidIdent(String name) {
         return name.matches("^[a-zA-Z_][a-zA-Z0-9_]*$");
     }

@@ -27,19 +27,19 @@ public class ApplyRenames extends GhidraScript {
             throw new IOException("functions.yaml not found: " + yamlPath);
         }
 
-        List<Map<String, String>> functions = parseFunctionsYaml(yamlPath);
+        List<YamlParsers.FunctionEntry> functions = YamlParsers.loadFunctions(yamlPath);
         int renamed = 0;
         int failed = 0;
 
         FunctionManager funcMgr = currentProgram.getFunctionManager();
 
-        for (Map<String, String> funcEntry : functions) {
-            String addrStr = funcEntry.get("addr");
-            String name = funcEntry.get("name");
+        for (YamlParsers.FunctionEntry funcEntry : functions) {
+            String addrStr = AddressFormats.normalizeAddress(funcEntry.getAddrValue());
+            String name = funcEntry.getName();
 
             if (addrStr == null || name == null) continue;
 
-            Address addr = currentProgram.getAddressFactory().getAddress(addrStr);
+            Address addr = AddressFormats.resolveAddress(currentProgram.getAddressFactory(), funcEntry.getAddrValue());
             if (addr == null) {
                 println("WARN: could not resolve address: " + addrStr);
                 failed++;
@@ -65,37 +65,5 @@ public class ApplyRenames extends GhidraScript {
         }
 
         println("ApplyRenames: " + renamed + " renamed, " + failed + " failed");
-    }
-
-    private List<Map<String, String>> parseFunctionsYaml(Path yamlPath) throws IOException {
-        List<Map<String, String>> result = new ArrayList<>();
-        List<String> lines = Files.readAllLines(yamlPath);
-        Map<String, String> current = null;
-        for (String line : lines) {
-            if (line.startsWith("  - addr:")) {
-                if (current != null) result.add(current);
-                current = new HashMap<>();
-                current.put("addr", extractYamlValue(line));
-            } else if (line.startsWith("    name:") && current != null) {
-                current.put("name", extractYamlValue(line));
-            }
-        }
-        if (current != null) result.add(current);
-        return result;
-    }
-
-    private String extractYamlValue(String line) {
-        int colon = line.indexOf(':');
-        if (colon < 0) return "";
-        String val = line.substring(colon + 1).trim();
-        // Handle double-quoted strings: "value"
-        if (val.startsWith("\"") && val.endsWith("\"")) {
-            val = val.substring(1, val.length() - 1);
-        }
-        // Handle single-quoted strings: 'value' (serde_yaml may output this)
-        else if (val.startsWith("'") && val.endsWith("'")) {
-            val = val.substring(1, val.length() - 1);
-        }
-        return val;
     }
 }

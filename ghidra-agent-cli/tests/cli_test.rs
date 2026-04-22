@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::process::Command as ProcessCommand;
 use tempfile::TempDir;
 
 fn cli() -> Command {
@@ -114,7 +115,100 @@ fn install_fake_bundled_entry(tmp: &TempDir) -> std::path::PathBuf {
         b"fake-jar",
     )
     .unwrap();
+    std::fs::write(bundle_dir.join("snakeyaml-2.6.jar"), b"fake-dependency").unwrap();
     bundle_dir
+}
+
+fn java_available(cmd: &str) -> bool {
+    ProcessCommand::new(cmd)
+        .arg("-version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn yaml_parser_preserves_numeric_hex_and_normalizes_back_to_hex() {
+    if !java_available("javac") || !java_available("java") {
+        eprintln!("skipping java smoke test because javac/java is unavailable");
+        return;
+    }
+
+    let tmp = TempDir::new().unwrap();
+    let yaml_path = tmp.path().join("functions.yaml");
+    std::fs::write(
+        &yaml_path,
+        r#"target: smoke
+functions:
+  - addr: 0x2000
+    name: target_func
+"#,
+    )
+    .unwrap();
+
+    let smoke_path = tmp.path().join("YamlAddressSmoke.java");
+    std::fs::write(
+        &smoke_path,
+        r#"import java.nio.file.Path;
+import java.util.List;
+
+public final class YamlAddressSmoke {
+    public static void main(String[] args) throws Exception {
+        List<YamlParsers.FunctionEntry> functions = YamlParsers.loadFunctions(Path.of(args[0]));
+        YamlParsers.FunctionEntry entry = functions.get(0);
+        Object raw = entry.getAddrValue();
+        System.out.println("isNumber=" + (raw instanceof Number));
+        System.out.println("raw=" + raw);
+        System.out.println("normalized=" + AddressStrings.normalize(raw));
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let scripts_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ghidra-scripts");
+    let snakeyaml_jar = scripts_dir.join("lib").join("snakeyaml-2.6.jar");
+    let classes_dir = tmp.path().join("classes");
+    std::fs::create_dir_all(&classes_dir).unwrap();
+
+    let javac_output = ProcessCommand::new("javac")
+        .arg("-cp")
+        .arg(snakeyaml_jar.to_str().unwrap())
+        .arg("-d")
+        .arg(classes_dir.to_str().unwrap())
+        .arg(scripts_dir.join("YamlParsers.java").to_str().unwrap())
+        .arg(scripts_dir.join("AddressStrings.java").to_str().unwrap())
+        .arg(smoke_path.to_str().unwrap())
+        .output()
+        .unwrap();
+    assert!(
+        javac_output.status.success(),
+        "javac failed: {}",
+        String::from_utf8_lossy(&javac_output.stderr)
+    );
+
+    let classpath = format!(
+        "{}:{}",
+        classes_dir.to_str().unwrap(),
+        snakeyaml_jar.to_str().unwrap()
+    );
+    let java_output = ProcessCommand::new("java")
+        .arg("-cp")
+        .arg(&classpath)
+        .arg("YamlAddressSmoke")
+        .arg(yaml_path.to_str().unwrap())
+        .output()
+        .unwrap();
+    assert!(
+        java_output.status.success(),
+        "java failed: {}",
+        String::from_utf8_lossy(&java_output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&java_output.stdout);
+    assert!(stdout.contains("isNumber=true"), "stdout was: {stdout}");
+    assert!(stdout.contains("raw=8192"), "stdout was: {stdout}");
+    assert!(stdout.contains("normalized=2000"), "stdout was: {stdout}");
 }
 
 // ---------------------------------------------------------------------------
