@@ -20,3 +20,8 @@ ghidra-projects/
 
 # cli-forge intermediate artifacts (pipeline contract files)
 .cli-forge/
+
+# Generated npm packaging artifacts
+npm/main/ghidra-script-bundle/
+npm/platforms/*/
+!npm/platforms/.gitkeep

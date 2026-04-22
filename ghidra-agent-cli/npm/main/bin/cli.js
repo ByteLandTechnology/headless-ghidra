@@ -42,9 +42,13 @@ try {
   process.exit(1);
 }
 
-// Resolve bundled ghidra-scripts directory and expose it to the native binary.
-// Layout: <pkg-root>/ghidra-scripts/  (bundled in the npm package)
-const scriptsDir = path.join(here, "..", "ghidra-scripts");
+// Resolve the prebuilt Ghidra script bundle and expose it to the native binary.
+// Layout: <pkg-root>/ghidra-script-bundle/
+const bundledScriptsDir = path.join(here, "..", "ghidra-script-bundle");
+const fallbackScriptsDir = path.join(here, "..", "ghidra-scripts");
+const scriptsDir = existsSync(bundledScriptsDir)
+  ? bundledScriptsDir
+  : fallbackScriptsDir;
 const childEnv = { ...process.env };
 if (!childEnv.GHIDRA_SCRIPTS_DIR && existsSync(scriptsDir)) {
   childEnv.GHIDRA_SCRIPTS_DIR = scriptsDir;

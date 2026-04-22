@@ -35,6 +35,7 @@ fn install_fake_ghidra(tmp: &TempDir) -> std::path::PathBuf {
 set -eu
 
 script=""
+logical_script=""
 collect_args=0
 workspace=""
 target=""
@@ -58,7 +59,9 @@ for arg in "$@"; do
     break
   fi
   if [ "$collect_args" = "1" ]; then
-    if [ -z "$workspace" ]; then
+    if [ "$script" = "GhidraAgentCliEntry.java" ] && [ -z "$logical_script" ]; then
+      logical_script="$arg"
+    elif [ -z "$workspace" ]; then
       workspace="$arg"
     elif [ -z "$target" ]; then
       target="$arg"
@@ -69,6 +72,10 @@ for arg in "$@"; do
     fi
   fi
 done
+
+if [ -n "$logical_script" ]; then
+  script="$logical_script"
+fi
 
 if [ "$script" = "DecompileFunction.java" ]; then
   if [ "$addr" = "0x2000" ]; then
@@ -96,6 +103,18 @@ fi
     std::fs::set_permissions(&script_path, perms).unwrap();
 
     ghidra_dir
+}
+
+fn install_fake_bundled_entry(tmp: &TempDir) -> std::path::PathBuf {
+    let bundle_dir = tmp.path().join("ghidra-script-bundle");
+    std::fs::create_dir_all(&bundle_dir).unwrap();
+    std::fs::write(bundle_dir.join("GhidraAgentCliEntry.java"), b"// fake").unwrap();
+    std::fs::write(
+        bundle_dir.join("ghidra-agent-cli-ghidra-scripts.jar"),
+        b"fake-jar",
+    )
+    .unwrap();
+    bundle_dir
 }
 
 // ---------------------------------------------------------------------------
@@ -825,6 +844,37 @@ fn ghidra_decompile_single_with_mock_ghidra_creates_artifacts() {
         .join("decompilation")
         .join("progress.yaml");
     assert!(!progress_path.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn ghidra_decompile_single_with_bundled_entry_keeps_cli_compatibility() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    let fake_ghidra = install_fake_ghidra(&tmp);
+    let fake_bundle = install_fake_bundled_entry(&tmp);
+
+    cli()
+        .env("GHIDRA_INSTALL_DIR", &fake_ghidra)
+        .env("GHIDRA_SCRIPTS_DIR", &fake_bundle)
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .arg("ghidra")
+        .arg("decompile")
+        .args(["--fn-id", "fn_001", "--addr", "0x1000"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("decompilation complete"));
+
+    let fn_dir = tmp
+        .path()
+        .join("artifacts")
+        .join("libtest")
+        .join("decompilation")
+        .join("functions")
+        .join("fn_001");
+    assert!(fn_dir.join("fn_001.c").exists());
+    assert!(fn_dir.join("decompilation-record.yaml").exists());
 }
 
 #[cfg(unix)]

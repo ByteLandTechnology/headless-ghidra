@@ -13,11 +13,13 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,6 +41,8 @@ if (!version) {
 
 const config = readReleaseConfig(rootDir);
 const repoUrl = `https://github.com/${config.sourceRepository}`;
+const BUNDLED_ENTRY_SCRIPT = "GhidraAgentCliEntry.java";
+const BUNDLED_SCRIPT_JAR = "ghidra-agent-cli-ghidra-scripts.jar";
 
 // Delegate all field/scope validation to the shared script so the checks
 // are identical in CI (release.yml) and local runs (sync-platform-packages).
@@ -62,6 +66,61 @@ const distDir = path.join(rootDir, "dist");
 mkdirSync(platformsDir, { recursive: true });
 
 const optionalDeps = {};
+
+function assertBundleContents(bundleDir) {
+  const required = [BUNDLED_ENTRY_SCRIPT, BUNDLED_SCRIPT_JAR];
+  for (const relPath of required) {
+    const fullPath = path.join(bundleDir, relPath);
+    if (!existsSync(fullPath)) {
+      throw new Error(`Incomplete Ghidra script bundle: missing ${fullPath}`);
+    }
+  }
+}
+
+function assertMainPackageBundlesScripts(mainPkgDir) {
+  const npmCacheDir = mkdtempSync(
+    path.join(tmpdir(), "ghidra-agent-cli-npm-pack-"),
+  );
+  const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
+    cwd: mainPkgDir,
+    encoding: "utf8",
+    env: { ...process.env, npm_config_cache: npmCacheDir },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  try {
+    if (result.status !== 0) {
+      throw new Error(
+        `npm pack --dry-run failed for ${mainPkgDir}:\n${result.stderr?.trim() ?? "(no stderr)"}`,
+      );
+    }
+
+    let packOutput;
+    try {
+      packOutput = JSON.parse(result.stdout);
+    } catch (error) {
+      throw new Error(
+        `Unable to parse npm pack --json output: ${error.message}`,
+      );
+    }
+
+    const files = Array.isArray(packOutput) && packOutput.length > 0
+      ? packOutput[0].files ?? []
+      : [];
+    const packedPaths = new Set(files.map((entry) => entry.path));
+    for (const relPath of [
+      `ghidra-script-bundle/${BUNDLED_ENTRY_SCRIPT}`,
+      `ghidra-script-bundle/${BUNDLED_SCRIPT_JAR}`,
+    ]) {
+      if (!packedPaths.has(relPath)) {
+        throw new Error(
+          `Main npm package is missing bundled script artifact ${relPath}`,
+        );
+      }
+    }
+  } finally {
+    rmSync(npmCacheDir, { recursive: true, force: true });
+  }
+}
 
 for (const target of config.targets) {
   const pkgName = buildPlatformPackageName(config, target);
@@ -101,7 +160,7 @@ for (const target of config.targets) {
     `${JSON.stringify(pkgManifest, null, 2)}\n`,
     "utf8",
   );
-    writeFileSync(
+  writeFileSync(
     path.join(pkgDir, "README.md"),
     `# ${pkgName}\n\n${target.os}-${target.cpu} binary for \`${cliName}\`.\nRuntime dependency of \`${mainPackageName}\`.\n`,
     "utf8",
@@ -116,15 +175,25 @@ mainPkg.bin = { [cliName]: "bin/cli.js" };
 mainPkg.optionalDependencies = optionalDeps;
 writeFileSync(mainPkgPath, `${JSON.stringify(mainPkg, null, 2)}\n`, "utf8");
 
-// Copy ghidra-scripts/ into npm/main/ so the published package bundles them.
-const srcScriptsDir = path.join(rootDir, "ghidra-scripts");
-const dstScriptsDir = path.join(rootDir, "npm", "main", "ghidra-scripts");
-if (existsSync(srcScriptsDir)) {
-  if (existsSync(dstScriptsDir)) rmSync(dstScriptsDir, { recursive: true });
-  cpSync(srcScriptsDir, dstScriptsDir, { recursive: true });
-  console.log("Copied ghidra-scripts/ into npm/main/.");
+// Copy the prebuilt Ghidra script bundle into npm/main/.
+const srcBundleDir = path.join(distDir, "ghidra-script-bundle");
+const dstBundleDir = path.join(rootDir, "npm", "main", "ghidra-script-bundle");
+if (existsSync(dstBundleDir)) {
+  rmSync(dstBundleDir, { recursive: true });
+}
+if (existsSync(path.join(rootDir, "npm", "main", "ghidra-scripts"))) {
+  rmSync(path.join(rootDir, "npm", "main", "ghidra-scripts"), {
+    recursive: true,
+  });
+}
+if (existsSync(srcBundleDir)) {
+  assertBundleContents(srcBundleDir);
+  cpSync(srcBundleDir, dstBundleDir, { recursive: true });
+  console.log("Copied ghidra-script-bundle/ into npm/main/.");
 } else {
-  console.warn("Warning: ghidra-scripts/ not found at repo root — skipping copy.");
+  throw new Error(
+    `Missing prebuilt Ghidra script bundle: ${srcBundleDir}`,
+  );
 }
 
 // Fill npm/main/README.md placeholders
@@ -141,6 +210,8 @@ if (existsSync(mainReadmePath)) {
   }
   writeFileSync(mainReadmePath, readme, "utf8");
 }
+
+assertMainPackageBundlesScripts(path.join(rootDir, "npm", "main"));
 
 // Update SKILL.md npm install version to match the release
 const skillPath = path.join(rootDir, "SKILL.md");

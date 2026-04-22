@@ -25,6 +25,13 @@ runs:
           cargo install cargo-zigbuild --locked
         fi
 
+        if ! brew list ghidra >/dev/null 2>&1; then
+          brew install ghidra
+        fi
+
+        ghidra_prefix="$(brew --prefix ghidra)"
+        echo "GHIDRA_INSTALL_DIR=${ghidra_prefix}/libexec" >> "$GITHUB_ENV"
+
         llvm_mingw_version="20260324"
         archive="llvm-mingw-${llvm_mingw_version}-ucrt-macos-universal.tar.xz"
         archive_path="$RUNNER_TEMP/$archive"

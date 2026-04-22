@@ -56,10 +56,12 @@ export function createLocalReleaseWorkspace(rootDir) {
   const config = readReleaseConfig(rootDir);
   const distDir = path.join(rootDir, "dist");
   const platformsDir = path.join(rootDir, "npm/platforms");
+  const mainBundleDir = path.join(rootDir, "npm/main/ghidra-script-bundle");
   const cargoTomlPath = path.join(rootDir, "Cargo.toml");
   const cargoLockPath = path.join(rootDir, "Cargo.lock");
   const mainPkgPath = path.join(rootDir, "npm/main/package.json");
   const mainReadmePath = path.join(rootDir, "npm/main/README.md");
+  const skillPath = path.join(rootDir, "SKILL.md");
   const isolatedTargetDir = mkdtempSync(
     path.join(tmpdir(), "cli-forge-local-release-"),
   );
@@ -70,6 +72,7 @@ export function createLocalReleaseWorkspace(rootDir) {
     cargoLockPath,
     mainPkgPath,
     mainReadmePath,
+    skillPath,
   ];
   for (const filePath of trackedFilePaths) {
     if (existsSync(filePath)) {
@@ -79,6 +82,7 @@ export function createLocalReleaseWorkspace(rootDir) {
 
   const distSnapshot = snapshotDir(distDir);
   const platformsSnapshot = snapshotDir(platformsDir);
+  const mainBundleSnapshot = snapshotDir(mainBundleDir);
 
   let restored = false;
   const sigintHandler = () => {
@@ -100,6 +104,7 @@ export function createLocalReleaseWorkspace(rootDir) {
     }
     restoreDir(distDir, distSnapshot);
     restoreDir(platformsDir, platformsSnapshot);
+    restoreDir(mainBundleDir, mainBundleSnapshot);
     rmSync(isolatedTargetDir, { recursive: true, force: true });
   }
 
@@ -179,11 +184,86 @@ export function createLocalReleaseWorkspace(rootDir) {
       }
     }
     console.log("  all rust targets: OK\n");
+
+    resolveGhidraInstallDir();
+    console.log("  ghidra: OK\n");
+  }
+
+  function resolveGhidraInstallDir() {
+    const discoverScript = path.join(
+      rootDir,
+      "..",
+      "headless-ghidra",
+      "scripts",
+      "discover-ghidra.sh",
+    );
+    if (!existsSync(discoverScript)) {
+      throw new Error(`Ghidra discovery script not found: ${discoverScript}`);
+    }
+
+    const result = spawnSync(
+      "bash",
+      [discoverScript, "--print-install-dir"],
+      {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    if (result.status !== 0) {
+      const stderr = result.stderr?.trim() || "unknown error";
+      throw new Error(
+        `Unable to locate a Ghidra installation for script bundle compilation: ${stderr}`,
+      );
+    }
+
+    return result.stdout.trim();
+  }
+
+  function buildGhidraScriptBundle() {
+    const ghidraDir = resolveGhidraInstallDir();
+    const sourceDir = path.join(rootDir, "ghidra-scripts");
+    const outputDir = path.join(distDir, "ghidra-script-bundle");
+    const bundleBuilder = path.join(sourceDir, "build-bundle.sh");
+
+    if (!existsSync(bundleBuilder)) {
+      throw new Error(`Bundle builder not found at ${bundleBuilder}.`);
+    }
+
+    rmSync(outputDir, { recursive: true, force: true });
+    mkdirSync(outputDir, { recursive: true });
+
+    console.log(`Building Ghidra script bundle with ${ghidraDir}...`);
+    const result = spawnSync(
+      "bash",
+      [
+        bundleBuilder,
+        "--ghidra-dir",
+        ghidraDir,
+        "--source-dir",
+        sourceDir,
+        "--output-dir",
+        outputDir,
+      ],
+      {
+        stdio: "inherit",
+      },
+    );
+    if (result.error) {
+      throw new Error(
+        `script bundle build failed: ${result.error.message}`,
+      );
+    }
+    if (result.status !== 0) {
+      throw new Error(
+        `script bundle build failed (exit ${result.status}).`,
+      );
+    }
   }
 
   function buildDist() {
     console.log("=== Step 1: Build ===\n");
     mkdirSync(distDir, { recursive: true });
+    buildGhidraScriptBundle();
 
     for (const target of config.targets) {
       const rustTarget = target.rustTarget;

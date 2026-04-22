@@ -7,6 +7,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  rmSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
@@ -29,6 +30,77 @@ if (!version) {
 
 const config = readReleaseConfig(rootDir);
 const cliName = config.cliName;
+
+function resolveGhidraInstallDir() {
+  const discoverScript = path.resolve(
+    rootDir,
+    "..",
+    "headless-ghidra",
+    "scripts",
+    "discover-ghidra.sh",
+  );
+  if (!existsSync(discoverScript)) {
+    throw new Error(`Ghidra discovery script not found at ${discoverScript}.`);
+  }
+
+  const result = spawnSync(
+    "bash",
+    [discoverScript, "--print-install-dir"],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  if (result.status !== 0) {
+    const stderr = result.stderr?.trim() || "unknown error";
+    throw new Error(
+      `Unable to locate a Ghidra installation for script bundle compilation: ${stderr}`,
+    );
+  }
+
+  return result.stdout.trim();
+}
+
+function buildGhidraScriptBundle(distDir) {
+  const ghidraDir = resolveGhidraInstallDir();
+  const sourceDir = path.join(rootDir, "ghidra-scripts");
+  const outputDir = path.join(distDir, "ghidra-script-bundle");
+  const bundleBuilder = path.join(sourceDir, "build-bundle.sh");
+
+  if (!existsSync(bundleBuilder)) {
+    throw new Error(`Bundle builder not found at ${bundleBuilder}.`);
+  }
+
+  rmSync(outputDir, { recursive: true, force: true });
+  mkdirSync(outputDir, { recursive: true });
+
+  console.log(`Building Ghidra script bundle with ${ghidraDir}...`);
+  const result = spawnSync(
+    "bash",
+    [
+      bundleBuilder,
+      "--ghidra-dir",
+      ghidraDir,
+      "--source-dir",
+      sourceDir,
+      "--output-dir",
+      outputDir,
+    ],
+    {
+      stdio: "inherit",
+    },
+  );
+  if (result.error) {
+    throw new Error(
+      `script bundle build failed: ${result.error.message}`,
+    );
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `script bundle build failed (exit ${result.status}).`,
+    );
+  }
+}
 
 // --- Bump Cargo.toml [package].version so the binary embeds the correct version ---
 const cargoTomlPath = path.join(rootDir, "Cargo.toml");
@@ -75,6 +147,7 @@ if (lockResult.status !== 0) {
 // --- Build all targets and create archives ---
 const distDir = path.join(rootDir, "dist");
 mkdirSync(distDir, { recursive: true });
+buildGhidraScriptBundle(distDir);
 
 for (const target of config.targets) {
   const rt = target.rustTarget;

@@ -16,8 +16,9 @@
 //
 // Usage: node scripts/release/rehearse.mjs
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,7 +36,29 @@ const rootDir = path.resolve(
 const config = readReleaseConfig(rootDir);
 const pkgName = buildMainPackageName(config);
 const rehearsalVersion = "0.0.0-rehearsal";
+const rehearsalTag = "rehearsal";
 const workspace = createLocalReleaseWorkspace(rootDir);
+const npmCacheDir = mkdtempSync(
+  path.join(tmpdir(), "ghidra-agent-cli-npm-dry-run-"),
+);
+
+function dryRunPublish(pkgDir, name) {
+  console.log(`  ${name}@${rehearsalVersion}`);
+  const result = spawnSync(
+    "npm",
+    ["publish", "--dry-run", "--access=public", "--tag", rehearsalTag],
+    {
+      cwd: pkgDir,
+      env: { ...process.env, npm_config_cache: npmCacheDir },
+      stdio: "inherit",
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `npm publish --dry-run failed for ${name} (exit ${result.status}).`,
+    );
+  }
+}
 
 // --- Step 1: Build ---------------------------------------------------------
 try {
@@ -67,35 +90,16 @@ try {
     const name = JSON.parse(
       readFileSync(path.join(pkgDir, "package.json"), "utf8"),
     ).name;
-    console.log(`  ${name}@${rehearsalVersion}`);
-    const r = spawnSync("npm", ["publish", "--dry-run", "--access=public"], {
-      cwd: pkgDir,
-      stdio: "inherit",
-      shell: true,
-    });
-    if (r.status !== 0) {
-      throw new Error(
-        `npm publish --dry-run failed for ${name} (exit ${r.status}).`,
-      );
-    }
+    dryRunPublish(pkgDir, name);
   }
 
   // Main package
-  console.log(`  ${pkgName}@${rehearsalVersion}`);
-  const mainR = spawnSync("npm", ["publish", "--dry-run", "--access=public"], {
-    cwd: path.join(rootDir, "npm/main"),
-    stdio: "inherit",
-    shell: true,
-  });
-  if (mainR.status !== 0) {
-    throw new Error(
-      `npm publish --dry-run failed for main package (exit ${mainR.status}).`,
-    );
-  }
+  dryRunPublish(path.join(rootDir, "npm/main"), pkgName);
 
   console.log(
     "\n=== Rehearsal complete. No tags, no npm publishes, no GitHub Release. ===\n",
   );
 } finally {
   workspace.cleanup();
+  rmSync(npmCacheDir, { recursive: true, force: true });
 }

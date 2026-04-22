@@ -3,6 +3,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${SKILL_DIR}/.." && pwd)"
+CLI_GHIDRA_SCRIPT_DIR="${REPO_ROOT}/ghidra-agent-cli/ghidra-scripts"
+CLI_GHIDRA_BUNDLE_DIR="${REPO_ROOT}/ghidra-agent-cli/ghidra-script-bundle"
+CLI_GHIDRA_DIST_BUNDLE_DIR="${REPO_ROOT}/ghidra-agent-cli/dist/ghidra-script-bundle"
+CLI_GHIDRA_NPM_BUNDLE_DIR="${REPO_ROOT}/ghidra-agent-cli/npm/main/ghidra-script-bundle"
+CLI_GHIDRA_ENTRY_SCRIPT_NAME="GhidraAgentCliEntry.java"
 DEFAULT_EXPORT_SCRIPT_PATH="${SKILL_DIR}/ghidra-scripts/ExportAnalysisArtifacts.java"
 DEFAULT_CALL_GRAPH_SCRIPT_PATH="${SKILL_DIR}/ghidra-scripts/ExportCallGraph.java"
 DEFAULT_REVIEW_EVIDENCE_SCRIPT_PATH="${SKILL_DIR}/ghidra-scripts/ReviewEvidenceCandidates.java"
@@ -234,6 +240,21 @@ resolve_existing_dir() {
   cd "${candidate}" && pwd -P
 }
 
+resolve_existing_file() {
+  local candidate="$1"
+  local parent=""
+  local base=""
+  if [[ "${candidate}" != /* ]]; then
+    candidate="${PWD}/${candidate}"
+  fi
+  if [[ ! -f "${candidate}" ]]; then
+    return 1
+  fi
+  parent="$(cd "$(dirname "${candidate}")" && pwd -P)"
+  base="$(basename "${candidate}")"
+  printf '%s/%s\n' "${parent}" "${base}"
+}
+
 detect_workspace_root() {
   local explicit_root="$1"
   local resolved=""
@@ -256,6 +277,41 @@ detect_workspace_root() {
   fi
 
   cd "${PWD}" && pwd -P
+}
+
+resolve_cli_bundled_script_path() {
+  local requested_path="$1"
+  local requested_resolved=""
+  local base_name=""
+  local source_candidate=""
+  local source_resolved=""
+  local bundle_dir=""
+
+  [[ -n "${requested_path}" ]] || return 1
+  [[ -d "${CLI_GHIDRA_SCRIPT_DIR}" ]] || return 1
+
+  requested_resolved="$(resolve_existing_file "${requested_path}" || true)"
+  [[ -n "${requested_resolved}" ]] || return 1
+
+  base_name="$(basename "${requested_path}")"
+  source_candidate="${CLI_GHIDRA_SCRIPT_DIR}/${base_name}"
+  source_resolved="$(resolve_existing_file "${source_candidate}" || true)"
+  [[ -n "${source_resolved}" ]] || return 1
+  [[ "${requested_resolved}" == "${source_resolved}" ]] || return 1
+
+  for bundle_dir in \
+    "${GHIDRA_AGENT_CLI_SCRIPT_BUNDLE_DIR:-}" \
+    "${CLI_GHIDRA_BUNDLE_DIR}" \
+    "${CLI_GHIDRA_DIST_BUNDLE_DIR}" \
+    "${CLI_GHIDRA_NPM_BUNDLE_DIR}"; do
+    [[ -n "${bundle_dir}" ]] || continue
+    if [[ -f "${bundle_dir}/${CLI_GHIDRA_ENTRY_SCRIPT_NAME}" ]]; then
+      printf '%s\n' "${bundle_dir}/${CLI_GHIDRA_ENTRY_SCRIPT_NAME}"
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 python_supports_module() {
@@ -1527,6 +1583,17 @@ if [[ -n "${BINARY_PATH}" ]]; then
   PROGRAM_NAME="$(basename "${BINARY_PATH}")"
 fi
 
+CLI_BUNDLED_LOGICAL_SCRIPT_NAME=""
+if [[ -n "${SCRIPT_PATH}" ]]; then
+  CLI_BUNDLED_SCRIPT_PATH="$(
+    resolve_cli_bundled_script_path "${SCRIPT_PATH}" || true
+  )"
+  if [[ -n "${CLI_BUNDLED_SCRIPT_PATH}" ]]; then
+    CLI_BUNDLED_LOGICAL_SCRIPT_NAME="$(basename "${SCRIPT_PATH}")"
+    SCRIPT_PATH="${CLI_BUNDLED_SCRIPT_PATH}"
+  fi
+fi
+
 # Build a headless command with common base arguments.
 # Usage: build_headless_command "import|process" "post_script_args..."
 build_headless_command() {
@@ -1546,7 +1613,18 @@ build_headless_command() {
   fi
   cmd+=(-analysisTimeoutPerFile 86400)
   cmd+=(-scriptPath "$(dirname "${SCRIPT_PATH}")")
-  cmd+=(-postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" "$@")
+  if [[ -n "${CLI_BUNDLED_LOGICAL_SCRIPT_NAME}" ]]; then
+    cmd+=(
+      -postScript
+      "$(basename "${SCRIPT_PATH}")"
+      "${CLI_BUNDLED_LOGICAL_SCRIPT_NAME}"
+      "${ARTIFACTS_DIR}"
+      "${TARGET_ID}"
+      "$@"
+    )
+  else
+    cmd+=(-postScript "$(basename "${SCRIPT_PATH}")" "${ARTIFACTS_DIR}" "${TARGET_ID}" "$@")
+  fi
 }
 
 add_logging() {

@@ -1,6 +1,23 @@
 use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
 
+const BUNDLED_ENTRY_SCRIPT_NAME: &str = "GhidraAgentCliEntry.java";
+const BUNDLED_SCRIPT_NAMES: &[&str] = &[
+    "ApplyRenames.java",
+    "ApplySignatures.java",
+    "AutoAnalyze.java",
+    "DecompileFunction.java",
+    "ExportBaseline.java",
+    "ExportCallGraph.java",
+    "IdentifyLibraries.java",
+    "ImportBinary.java",
+    "LintReviewArtifacts.java",
+    "RebuildProject.java",
+    "ReviewEvidenceCandidates.java",
+    "VerifyFunctionSignatures.java",
+    "VerifyRenames.java",
+];
+
 /// Search common Ghidra installation locations
 fn search_ghidra_locations() -> Option<PathBuf> {
     let search_paths = [
@@ -96,11 +113,16 @@ pub fn ghidra_projects_dir(workspace: &Path, target: &str) -> PathBuf {
 /// Resolves the Ghidra scripts directory.
 /// Priority:
 /// 1. GHIDRA_SCRIPTS_DIR env var
-/// 2. workspace/ghidra-scripts/
-/// 3. CLI binary's own directory (and its parent)
-/// 4. CWD/ghidra-scripts/ (for running from repo root)
-/// 5. ghidra_dir's built-in scripts
+/// 2. workspace/ghidra-script-bundle/
+/// 3. workspace/ghidra-scripts/
+/// 4. CLI binary's own directory (and its parent), preferring ghidra-script-bundle/
+/// 5. CWD-based lookup, preferring ghidra-script-bundle/
+/// 6. ghidra_dir's built-in scripts
 pub fn resolve_scripts_dir(workspace: &Path, ghidra_dir: &Path) -> PathBuf {
+    fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
+        candidates.iter().find(|path| path.exists()).cloned()
+    }
+
     // 1. Env var override
     if let Ok(dir) = std::env::var("GHIDRA_SCRIPTS_DIR") {
         let p = PathBuf::from(&dir);
@@ -108,20 +130,26 @@ pub fn resolve_scripts_dir(workspace: &Path, ghidra_dir: &Path) -> PathBuf {
             return p;
         }
     }
-    // 2. workspace/ghidra-scripts/
+    // 2. workspace/ghidra-script-bundle/
+    let ws_bundle = workspace.join("ghidra-script-bundle");
+    if ws_bundle.exists() {
+        return ws_bundle;
+    }
+    // 3. workspace/ghidra-scripts/
     let ws_scripts = workspace.join("ghidra-scripts");
     if ws_scripts.exists() {
         return ws_scripts;
     }
-    // 3. Walk up from CLI binary's directory to find ghidra-scripts/
+    // 4. Walk up from CLI binary's directory to find ghidra-script-bundle/ or ghidra-scripts/
     //    Handles layouts like: <install>/target/release/ghidra-agent-cli
-    //    with scripts at:      <install>/ghidra-scripts/
+    //    with scripts at:      <install>/ghidra-script-bundle/ or <install>/ghidra-scripts/
     if let Ok(exe) = std::env::current_exe()
         && let Some(mut dir) = exe.parent()
     {
         loop {
-            let candidate = dir.join("ghidra-scripts");
-            if candidate.exists() {
+            if let Some(candidate) =
+                first_existing(&[dir.join("ghidra-script-bundle"), dir.join("ghidra-scripts")])
+            {
                 return candidate;
             }
             dir = match dir.parent() {
@@ -130,32 +158,47 @@ pub fn resolve_scripts_dir(workspace: &Path, ghidra_dir: &Path) -> PathBuf {
             };
         }
     }
-    // 4. CWD-based lookup (for running from repo root)
+    // 5. CWD-based lookup (for running from repo root)
     if let Ok(cwd) = std::env::current_dir() {
-        // Check ghidra-agent-cli/ghidra-scripts (for when running from repo root)
-        let cli_scripts = cwd.join("ghidra-agent-cli").join("ghidra-scripts");
-        if cli_scripts.exists() {
-            return cli_scripts;
+        if let Some(candidate) = first_existing(&[
+            cwd.join("ghidra-agent-cli").join("ghidra-script-bundle"),
+            cwd.join("ghidra-agent-cli").join("ghidra-scripts"),
+            cwd.join("ghidra-script-bundle"),
+            cwd.join("ghidra-scripts"),
+        ]) {
+            return candidate;
         }
-        // Check cwd/ghidra-scripts directly
-        let cwd_scripts = cwd.join("ghidra-scripts");
-        if cwd_scripts.exists() {
-            return cwd_scripts;
-        }
-        // Check parent/ghhidra-scripts (for when running from ghidra-agent-cli/)
-        if let Some(parent) = cwd.parent() {
-            let parent_scripts = parent.join("ghidra-scripts");
-            if parent_scripts.exists() {
-                return parent_scripts;
-            }
+        if let Some(parent) = cwd.parent()
+            && let Some(candidate) = first_existing(&[
+                parent.join("ghidra-script-bundle"),
+                parent.join("ghidra-scripts"),
+            ])
+        {
+            return candidate;
         }
     }
-    // 5. Fall back to ghidra's built-in Base scripts (most useful)
+    // 6. Fall back to ghidra's built-in Base scripts (most useful)
     ghidra_dir
         .join("Ghidra")
         .join("Features")
         .join("Base")
         .join("ghidra_scripts")
+}
+
+fn bundled_entry_script_exists(scripts_dir: &Path) -> bool {
+    scripts_dir.join(BUNDLED_ENTRY_SCRIPT_NAME).exists()
+}
+
+fn logical_script_name(script: &str) -> &str {
+    Path::new(script)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(script)
+}
+
+fn should_use_bundled_entry(script: &str, scripts_dir: &Path) -> bool {
+    bundled_entry_script_exists(scripts_dir)
+        && BUNDLED_SCRIPT_NAMES.contains(&logical_script_name(script))
 }
 
 /// Run Ghidra analyzeHeadless with -import flag for binary import
@@ -237,6 +280,12 @@ fn run_headless_impl(
 ) -> Result<()> {
     let headless = ghidra_dir.join("support").join("analyzeHeadless");
     let scripts_dir = resolve_scripts_dir(workspace, ghidra_dir);
+    let use_bundled_entry = should_use_bundled_entry(script, &scripts_dir);
+    let post_script = if use_bundled_entry {
+        BUNDLED_ENTRY_SCRIPT_NAME
+    } else {
+        script
+    };
     let mut cmd = std::process::Command::new(&headless);
     cmd.arg(project_dir).arg(target);
 
@@ -245,7 +294,10 @@ fn run_headless_impl(
         cmd.arg("-process").arg(name);
     }
 
-    cmd.arg("-postScript").arg(script);
+    cmd.arg("-postScript").arg(post_script);
+    if use_bundled_entry {
+        cmd.arg(logical_script_name(script));
+    }
 
     // Script args come before -scriptPath: workspace, target, then script-specific extras
     cmd.arg(workspace.to_string_lossy().as_ref());
@@ -261,7 +313,7 @@ fn run_headless_impl(
     if !status.success() {
         return Err(anyhow!(
             "Ghidra headless script {} failed with status {}",
-            script,
+            post_script,
             status
         ));
     }
