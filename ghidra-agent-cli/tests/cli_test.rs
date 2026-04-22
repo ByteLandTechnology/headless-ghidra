@@ -42,6 +42,14 @@ workspace=""
 target=""
 addr=""
 fn_id=""
+min_entries=""
+max_entries=""
+scan_limit=""
+segments=""
+min_score=""
+write_baseline=""
+overwrite=""
+report_path=""
 prev=""
 
 for arg in "$@"; do
@@ -66,10 +74,26 @@ for arg in "$@"; do
       workspace="$arg"
     elif [ -z "$target" ]; then
       target="$arg"
-    elif [ -z "$addr" ]; then
+    elif { [ "$script" = "DecompileFunction.java" ] || [ "$logical_script" = "DecompileFunction.java" ]; } && [ -z "$addr" ]; then
       addr="$arg"
-    elif [ -z "$fn_id" ]; then
+    elif { [ "$script" = "DecompileFunction.java" ] || [ "$logical_script" = "DecompileFunction.java" ]; } && [ -z "$fn_id" ]; then
       fn_id="$arg"
+    elif { [ "$script" = "AnalyzeVtables.java" ] || [ "$logical_script" = "AnalyzeVtables.java" ]; } && [ -z "$min_entries" ]; then
+      min_entries="$arg"
+    elif { [ "$script" = "AnalyzeVtables.java" ] || [ "$logical_script" = "AnalyzeVtables.java" ]; } && [ -z "$max_entries" ]; then
+      max_entries="$arg"
+    elif { [ "$script" = "AnalyzeVtables.java" ] || [ "$logical_script" = "AnalyzeVtables.java" ]; } && [ -z "$scan_limit" ]; then
+      scan_limit="$arg"
+    elif { [ "$script" = "AnalyzeVtables.java" ] || [ "$logical_script" = "AnalyzeVtables.java" ]; } && [ -z "$segments" ]; then
+      segments="$arg"
+    elif { [ "$script" = "AnalyzeVtables.java" ] || [ "$logical_script" = "AnalyzeVtables.java" ]; } && [ -z "$min_score" ]; then
+      min_score="$arg"
+    elif { [ "$script" = "AnalyzeVtables.java" ] || [ "$logical_script" = "AnalyzeVtables.java" ]; } && [ -z "$write_baseline" ]; then
+      write_baseline="$arg"
+    elif { [ "$script" = "AnalyzeVtables.java" ] || [ "$logical_script" = "AnalyzeVtables.java" ]; } && [ -z "$overwrite" ]; then
+      overwrite="$arg"
+    elif { [ "$script" = "AnalyzeVtables.java" ] || [ "$logical_script" = "AnalyzeVtables.java" ]; } && [ -z "$report_path" ]; then
+      report_path="$arg"
     fi
   fi
 done
@@ -95,6 +119,82 @@ prototype: int(void)
 timestamp: 2026-04-21T00:00:00Z
 EOF
 fi
+
+if [ "$script" = "AnalyzeVtables.java" ]; then
+  if [ -z "$report_path" ]; then
+    report_path="$workspace/artifacts/$target/baseline/vtable-analysis-report.yaml"
+  fi
+  mkdir -p "$(dirname "$report_path")"
+  cat > "$report_path" <<EOF
+target: $target
+pointer_size: 8
+scan_segments:
+  - ".rodata"
+candidates:
+  - addr: "0x3000"
+    status: accepted
+    class: "MockClass"
+    segment: ".rodata"
+    score: 8
+    confidence: "high"
+    entry_count: 4
+    entries:
+      - "0x1000"
+      - "0x1010"
+      - "0x1020"
+      - "0x1030"
+    reasons:
+      - "entry_count_in_expected_range=true"
+      - "first_entry_destructor_like=true"
+    associated_type: "MockClass"
+    association_evidence:
+      - "symbol:vtable for MockClass"
+    signature_summary: "void(MockClass*)"
+rejected:
+  - addr: "0x4000"
+    status: rejected
+    class: "jump_table_0x4000"
+    segment: ".rodata"
+    score: 1
+    confidence: "low"
+    entry_count: 2
+    entries:
+      - "0x2000"
+      - "0x2010"
+    reasons:
+      - "score_below_threshold=$min_score"
+EOF
+
+  if [ "$write_baseline" = "true" ]; then
+    baseline_path="$workspace/artifacts/$target/baseline/vtables.yaml"
+    if [ -f "$baseline_path" ] && [ "$overwrite" != "true" ]; then
+      echo "Refusing to overwrite existing baseline vtables without overwrite=true: $baseline_path" >&2
+      exit 1
+    fi
+    mkdir -p "$(dirname "$baseline_path")"
+    cat > "$baseline_path" <<EOF
+target: $target
+vtables:
+  - class: "MockClass"
+    addr: "0x3000"
+    entries:
+      - "0x1000"
+      - "0x1010"
+      - "0x1020"
+      - "0x1030"
+    entry_count: 4
+    confidence: "high"
+    score: 8
+    source: "ghidra_auto"
+    segment: ".rodata"
+    associated_type: "MockClass"
+    association_evidence:
+      - "symbol:vtable for MockClass"
+    signature_summary: "void(MockClass*)"
+EOF
+  fi
+fi
+
 "#,
     )
     .unwrap();
@@ -969,6 +1069,79 @@ fn ghidra_decompile_single_with_bundled_entry_keeps_cli_compatibility() {
         .join("fn_001");
     assert!(fn_dir.join("fn_001.c").exists());
     assert!(fn_dir.join("decompilation-record.yaml").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn ghidra_analyze_vtables_with_mock_ghidra_writes_report_and_baseline() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    let fake_ghidra = install_fake_ghidra(&tmp);
+
+    cli()
+        .env("GHIDRA_INSTALL_DIR", &fake_ghidra)
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .arg("ghidra")
+        .arg("analyze-vtables")
+        .arg("--write-baseline")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("vtable analysis complete"))
+        .stdout(predicate::str::contains("report_path"));
+
+    let baseline_dir = tmp
+        .path()
+        .join("artifacts")
+        .join("libtest")
+        .join("baseline");
+    let report = std::fs::read_to_string(baseline_dir.join("vtable-analysis-report.yaml")).unwrap();
+    assert!(report.contains("candidates:"));
+    assert!(report.contains("MockClass"));
+    assert!(report.contains("score: 8"));
+    assert!(report.contains("status: accepted"));
+
+    let baseline = std::fs::read_to_string(baseline_dir.join("vtables.yaml")).unwrap();
+    assert!(baseline.contains("class: \"MockClass\""));
+    assert!(baseline.contains("\"0x1000\""));
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .arg("validate")
+        .args(["--schema", "vtable-analysis"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("schema:vtable-analysis"));
+}
+
+#[cfg(unix)]
+#[test]
+fn ghidra_analyze_vtables_with_bundled_entry_keeps_cli_compatibility() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    let fake_ghidra = install_fake_ghidra(&tmp);
+    let fake_bundle = install_fake_bundled_entry(&tmp);
+
+    cli()
+        .env("GHIDRA_INSTALL_DIR", &fake_ghidra)
+        .env("GHIDRA_SCRIPTS_DIR", &fake_bundle)
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .arg("ghidra")
+        .arg("analyze-vtables")
+        .arg("--write-baseline")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("vtable analysis complete"));
+
+    let baseline_dir = tmp
+        .path()
+        .join("artifacts")
+        .join("libtest")
+        .join("baseline");
+    assert!(baseline_dir.join("vtable-analysis-report.yaml").exists());
+    assert!(baseline_dir.join("vtables.yaml").exists());
 }
 
 #[cfg(unix)]

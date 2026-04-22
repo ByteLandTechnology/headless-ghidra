@@ -1057,6 +1057,10 @@ pub fn structured_help(path: &[String]) -> Option<HelpDocument> {
                     summary: "Export the baseline markdown report".into(),
                 },
                 HelpSubcommand {
+                    name: "analyze-vtables".into(),
+                    summary: "Analyze likely virtual tables and emit a report".into(),
+                },
+                HelpSubcommand {
                     name: "apply-renames".into(),
                     summary: "Apply symbol renames to Ghidra".into(),
                 },
@@ -1094,8 +1098,8 @@ pub fn structured_help(path: &[String]) -> Option<HelpDocument> {
                     description: "Locate the Ghidra installation".into(),
                 },
                 HelpExample {
-                    command: format!("{SKILL_NAME} ghidra decompile --function main"),
-                    description: "Decompile main()".into(),
+                    command: format!("{SKILL_NAME} ghidra analyze-vtables --target libfoo"),
+                    description: "Write a dedicated vtable analysis report".into(),
                 },
             ],
         }),
@@ -1218,6 +1222,48 @@ pub fn structured_help(path: &[String]) -> Option<HelpDocument> {
                         "{SKILL_NAME} ghidra decompile --target libfoo --fn-id fn_001 --addr 0x401000 --format json"
                     ),
                     description: "Decompile one function with JSON output".into(),
+                },
+            ],
+        }),
+
+        ["ghidra", "analyze-vtables"] => Some(HelpDocument {
+            command_path: vec![SKILL_NAME.into(), "ghidra".into(), "analyze-vtables".into()],
+            purpose: "Scan likely vtable regions and emit a scored report".into(),
+            usage: format!("{SKILL_NAME} ghidra analyze-vtables [OPTIONS]"),
+            arguments: vec![],
+            options: vec![
+                opt_workspace(),
+                opt_target(),
+                opt_format(),
+                HelpOption {
+                    name: "--write-baseline".into(),
+                    value_name: String::new(),
+                    default_value: "false".into(),
+                    description: "Write accepted candidates to baseline/vtables.yaml".into(),
+                },
+            ],
+            subcommands: vec![],
+            output_formats: standard_formats(),
+            exit_behavior: standard_exit_codes(),
+            description: vec![
+                "Runs a dedicated Ghidra script that scans likely read-only".into(),
+                "and relro-style sections for contiguous code pointers,".into(),
+                "scores each candidate, and records type/class hints.".into(),
+                String::new(),
+                "It always writes artifacts/<target>/baseline/".into(),
+                "vtable-analysis-report.yaml. Use --write-baseline to also write".into(),
+                "artifacts/<target>/baseline/vtables.yaml.".into(),
+            ],
+            examples: vec![
+                HelpExample {
+                    command: format!("{SKILL_NAME} ghidra analyze-vtables --target libfoo"),
+                    description: "Write a scored vtable analysis report".into(),
+                },
+                HelpExample {
+                    command: format!(
+                        "{SKILL_NAME} ghidra analyze-vtables --target libfoo --write-baseline"
+                    ),
+                    description: "Refresh baseline/vtables.yaml from accepted candidates".into(),
                 },
             ],
         }),
@@ -1617,6 +1663,14 @@ mod tests {
     }
 
     #[test]
+    fn ghidra_analyze_vtables() {
+        let doc = structured_help(&["ghidra".into(), "analyze-vtables".into()])
+            .expect("ghidra analyze-vtables help");
+        assert!(doc.options.iter().any(|o| o.name == "--write-baseline"));
+        assert!(doc.options.iter().any(|o| o.name == "--target"));
+    }
+
+    #[test]
     fn progress_compute_next_batch() {
         let doc = structured_help(&["progress".into(), "compute-next-batch".into()])
             .expect("progress compute-next-batch help");
@@ -1663,6 +1717,7 @@ mod tests {
                     "import",
                     "auto-analyze",
                     "export-baseline",
+                    "analyze-vtables",
                     "apply-renames",
                     "verify-renames",
                     "apply-signatures",

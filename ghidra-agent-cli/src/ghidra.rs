@@ -4,8 +4,10 @@ use std::path::{Path, PathBuf};
 const BUNDLED_ENTRY_SCRIPT_NAME: &str = "GhidraAgentCliEntry.java";
 const BUNDLED_SCRIPT_NAMES: &[&str] = &[
     "ApplyRenames.java",
+    "AnalyzeVtables.java",
     "ApplySignatures.java",
     "AutoAnalyze.java",
+    "AnalyzeVtables.java",
     "DecompileFunction.java",
     "ExportBaseline.java",
     "ExportCallGraph.java",

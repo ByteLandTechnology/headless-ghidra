@@ -897,8 +897,9 @@ pub struct GateShowArgs {
 
 // ---------------------------------------------------------------------------
 // Container: ghidra -> { discover, import, auto-analyze, export-baseline,
-//                        apply-renames, verify-renames, apply-signatures,
-//                        verify-signatures, decompile, rebuild-project }
+//                        analyze-vtables, apply-renames, verify-renames,
+//                        apply-signatures, verify-signatures, decompile,
+//                        rebuild-project }
 // ---------------------------------------------------------------------------
 #[derive(Subcommand, Debug)]
 pub enum GhidraCmd {
@@ -906,6 +907,7 @@ pub enum GhidraCmd {
     Import(GhidraImportArgs),
     AutoAnalyze(GhidraAutoAnalyzeArgs),
     ExportBaseline(GhidraExportBaselineArgs),
+    AnalyzeVtables(GhidraAnalyzeVtablesArgs),
     ApplyRenames(GhidraApplyRenamesArgs),
     VerifyRenames(GhidraVerifyRenamesArgs),
     ApplySignatures(GhidraApplySignaturesArgs),
@@ -936,6 +938,28 @@ pub struct GhidraAutoAnalyzeArgs {
 pub struct GhidraExportBaselineArgs {
     #[arg(long)]
     pub target: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct GhidraAnalyzeVtablesArgs {
+    #[arg(long)]
+    pub target: Option<String>,
+    #[arg(long, default_value_t = 4)]
+    pub min_entries: u32,
+    #[arg(long, default_value_t = 20)]
+    pub max_entries: u32,
+    #[arg(long, default_value_t = 64)]
+    pub scan_limit: u32,
+    #[arg(long, default_value = "rodata,const,data.rel.ro,.data")]
+    pub segments: String,
+    #[arg(long, default_value_t = 4)]
+    pub min_score: i32,
+    #[arg(long)]
+    pub write_baseline: bool,
+    #[arg(long)]
+    pub overwrite: bool,
+    #[arg(long)]
+    pub report_path: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -1438,6 +1462,7 @@ fn exec_validate(cli: &Cli, args: &ValidateArgs, fmt: Format) -> Result<i32> {
                 "callgraph" => ad.join("baseline").join("callgraph.yaml"),
                 "types" => ad.join("baseline").join("types.yaml"),
                 "vtables" => ad.join("baseline").join("vtables.yaml"),
+                "vtable-analysis" => ad.join("baseline").join("vtable-analysis-report.yaml"),
                 "constants" => ad.join("baseline").join("constants.yaml"),
                 "strings" => ad.join("baseline").join("strings.yaml"),
                 "imports" => ad.join("baseline").join("imports.yaml"),
@@ -1628,6 +1653,25 @@ fn exec_validate(cli: &Cli, args: &ValidateArgs, fmt: Format) -> Result<i32> {
                                 &["class", "addr", "entries"],
                                 &mut schema_checks,
                             );
+                        }
+                        "vtable-analysis" => {
+                            validate_baseline_doc(
+                                &doc,
+                                "vtable-analysis",
+                                "candidates",
+                                &["addr", "status", "score", "entries"],
+                                &mut schema_checks,
+                            );
+                            schema_checks.push(gate::GateCheck {
+                                id: "schema_vtable_analysis_pointer_size".into(),
+                                description: "vtable-analysis has 'pointer_size'".into(),
+                                passed: doc.get("pointer_size").is_some(),
+                                detail: if doc.get("pointer_size").is_some() {
+                                    None
+                                } else {
+                                    Some("missing 'pointer_size'".into())
+                                },
+                            });
                         }
                         "constants" => {
                             validate_baseline_doc(
@@ -2179,6 +2223,14 @@ fn exec_vtables_add(cli: &Cli, args: &VtablesAddArgs, fmt: Format) -> Result<i32
         class: args.class_name.clone(),
         addr: args.addr.clone(),
         entries: args.entries.clone(),
+        entry_count: Some(args.entries.len()),
+        confidence: None,
+        score: None,
+        source: Some("manual".to_string()),
+        segment: None,
+        associated_type: None,
+        association_evidence: None,
+        signature_summary: None,
     });
     baseline::save_vtables(&ws, &target, &vtables)?;
     let out = ok_output(&format!("vtable for '{}' added", args.class_name));
@@ -2853,6 +2905,90 @@ fn exec_ghidra_export_baseline(
         Some(program_name),
     )?;
     let out = ok_output(&format!("baseline exported for target '{}'", target));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(EXIT_SUCCESS)
+}
+
+fn exec_ghidra_analyze_vtables(
+    cli: &Cli,
+    args: &GhidraAnalyzeVtablesArgs,
+    fmt: Format,
+) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+    let ghidra_dir = ghidra::discover_ghidra(None)?;
+    let project_dir = ghidra::ghidra_projects_dir(&ws, &target);
+    let binary_name = decompile_binary_name(&ws, &target)?;
+    let report_path = args
+        .report_path
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            workspace::artifact_dir(&ws, &target)
+                .join("baseline")
+                .join("vtable-analysis-report.yaml")
+        });
+    let min_entries = args.min_entries.to_string();
+    let max_entries = args.max_entries.to_string();
+    let scan_limit = args.scan_limit.to_string();
+    let min_score = args.min_score.to_string();
+    let write_baseline = args.write_baseline.to_string();
+    let overwrite = args.overwrite.to_string();
+    let report_path_string = report_path.to_string_lossy().into_owned();
+
+    ghidra::run_headless_with_program(
+        &ws,
+        &ghidra_dir,
+        &project_dir,
+        &target,
+        "AnalyzeVtables.java",
+        &[
+            &min_entries,
+            &max_entries,
+            &scan_limit,
+            &args.segments,
+            &min_score,
+            &write_baseline,
+            &overwrite,
+            &report_path_string,
+        ],
+        Some(&binary_name),
+    )?;
+
+    let mut data = serde_yaml::Mapping::new();
+    data.insert(
+        serde_yaml::Value::String("report_path".into()),
+        serde_yaml::Value::String(report_path.display().to_string()),
+    );
+    data.insert(
+        serde_yaml::Value::String("write_baseline".into()),
+        serde_yaml::Value::Bool(args.write_baseline),
+    );
+    data.insert(
+        serde_yaml::Value::String("min_entries".into()),
+        serde_yaml::to_value(args.min_entries)?,
+    );
+    data.insert(
+        serde_yaml::Value::String("max_entries".into()),
+        serde_yaml::to_value(args.max_entries)?,
+    );
+    data.insert(
+        serde_yaml::Value::String("scan_limit".into()),
+        serde_yaml::to_value(args.scan_limit)?,
+    );
+    data.insert(
+        serde_yaml::Value::String("segments".into()),
+        serde_yaml::Value::String(args.segments.clone()),
+    );
+    data.insert(
+        serde_yaml::Value::String("min_score".into()),
+        serde_yaml::to_value(args.min_score)?,
+    );
+
+    let out = ok_output_with_data(
+        &format!("vtable analysis complete for target '{}'", target),
+        serde_yaml::Value::Mapping(data),
+    );
     serialize_value(&mut std::io::stdout(), &out, fmt)?;
     Ok(EXIT_SUCCESS)
 }
@@ -3922,6 +4058,13 @@ fn dispatch(cli: &Cli, command: &Commands, fmt: Format) -> Result<i32> {
             let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
             with_lock(&ws, Some(&target), "ghidra", || {
                 exec_ghidra_export_baseline(cli, args, fmt)
+            })
+        }
+        Commands::Ghidra(GhidraCmd::AnalyzeVtables(args)) => {
+            let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+            let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+            with_lock(&ws, Some(&target), "ghidra", || {
+                exec_ghidra_analyze_vtables(cli, args, fmt)
             })
         }
         Commands::Ghidra(GhidraCmd::ApplyRenames(args)) => {

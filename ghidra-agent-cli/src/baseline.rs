@@ -125,6 +125,22 @@ pub struct VtableEntry {
     pub class: String,
     pub addr: String,
     pub entries: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segment: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub associated_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub association_evidence: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,6 +162,68 @@ pub fn save_vtables(workspace: &Path, target: &str, data: &VtablesYaml) -> Resul
         &artifact_dir(workspace, target)
             .join("baseline")
             .join("vtables.yaml"),
+        data,
+    )
+}
+
+// --- vtable-analysis.yaml ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VtableAnalysisSlot {
+    pub slot: u64,
+    pub pointer_addr: String,
+    pub function_addr: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VtableAnalysisCandidate {
+    pub addr: String,
+    pub section: String,
+    pub score: u64,
+    pub accepted: bool,
+    pub entry_count: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub type_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<String>,
+    pub entries: Vec<VtableAnalysisSlot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VtableAnalysisYaml {
+    pub target: String,
+    pub generated_at: String,
+    pub pointer_size: u64,
+    #[serde(default)]
+    pub baseline_written: bool,
+    #[serde(default)]
+    pub scanned_blocks: Vec<String>,
+    pub candidates: Vec<VtableAnalysisCandidate>,
+}
+
+pub fn load_vtable_analysis(workspace: &Path, target: &str) -> Result<VtableAnalysisYaml> {
+    load_yaml(
+        &artifact_dir(workspace, target)
+            .join("baseline")
+            .join("vtable-analysis.yaml"),
+    )
+}
+
+pub fn save_vtable_analysis(
+    workspace: &Path,
+    target: &str,
+    data: &VtableAnalysisYaml,
+) -> Result<()> {
+    save_yaml(
+        &artifact_dir(workspace, target)
+            .join("baseline")
+            .join("vtable-analysis.yaml"),
         data,
     )
 }
