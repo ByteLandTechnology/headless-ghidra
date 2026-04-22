@@ -1,3 +1,13 @@
+## [1.2.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.1.2...v1.2.0) (2026-04-22)
+
+### Features
+
+* **ghidra-agent-cli:** add batch decompile support ([0a6e394](https://github.com/ByteLandTechnology/headless-ghidra/commit/0a6e39428151311c31768799a7251daa46deb659))
+
+### Bug Fixes
+
+* **release:** prebuild ghidra bundle for npm ([4e608db](https://github.com/ByteLandTechnology/headless-ghidra/commit/4e608dbc2e00c7718b012af1b53e707c4f493f08))
+
 ## [1.1.2](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.1.1...v1.1.2) (2026-04-21)
 
 ## [1.1.1](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.1.0...v1.1.1) (2026-04-21)
