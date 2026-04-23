@@ -1,3 +1,13 @@
+## [1.5.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.4.0...v1.5.0) (2026-04-23)
+
+### Features
+
+* **cli:** reorganize pipeline around p0-p4 artifacts ([c953248](https://github.com/ByteLandTechnology/headless-ghidra/commit/c953248543f48de140441f721639198af9febfba))
+
+### Bug Fixes
+
+* **release:** serialize linux openssl builds ([b26576e](https://github.com/ByteLandTechnology/headless-ghidra/commit/b26576eb622493fbece182e72eb9e93d2bd77d3a))
+
 ## [1.4.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.3.0...v1.4.0) (2026-04-23)
 
 ### Features
