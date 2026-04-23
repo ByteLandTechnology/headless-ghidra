@@ -70,6 +70,7 @@ impl ScriptRunner {
     pub fn run(&self, script: &str) -> Result<String> {
         let temp_dir = std::env::temp_dir();
         let script_path = temp_dir.join(format!("frida_script_{}.js", std::process::id()));
+        let log_path = temp_dir.join(format!("frida_output_{}.log", std::process::id()));
 
         // Build a JSON env block and prepend it; also replace legacy %%KEY%% placeholders
         let env_json = serde_json::to_string(&self.env_vars).unwrap_or_else(|_| "{}".to_string());
@@ -95,18 +96,26 @@ impl ScriptRunner {
         let (stdout, stderr) = run_frida_with_device(
             &self.device,
             script_path.to_str().unwrap(),
+            Some(&log_path),
             target,
             &proc_refs,
             self.timeout_secs,
         )?;
 
         let _ = fs::remove_file(&script_path);
+        let log_output = fs::read_to_string(&log_path).unwrap_or_default();
+        let _ = fs::remove_file(&log_path);
 
         if !stderr.is_empty() && stderr.contains("error") {
             eprintln!("Frida warning: {}", stderr);
         }
 
-        Ok(stdout)
+        Ok([stdout, stderr, log_output]
+            .into_iter()
+            .filter(|part| !part.trim().is_empty())
+            .map(|part| part.trim().to_string())
+            .collect::<Vec<_>>()
+            .join("\n"))
     }
 }
 

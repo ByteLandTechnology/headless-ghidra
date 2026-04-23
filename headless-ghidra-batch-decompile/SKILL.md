@@ -1,13 +1,14 @@
 ---
 name: "headless-ghidra-batch-decompile"
-description: "P4+P5 sub-skill: apply metadata, decompile selected functions through Ghidra, and record per-function YAML outputs."
-phase: "P4+P5"
+description: "P4 sub-skill: substitute selected functions by applying metadata, decompiling through Ghidra, and recording per-function YAML outputs."
+phase: "P4"
 ---
 
-# Headless Ghidra Batch Decompile — P4+P5
+# Headless Ghidra Function Substitution — P4
 
-P4+P5 consumes the current selected batch, applies metadata changes, runs the
-approved Ghidra decompilation path, and records per-function artifacts.
+P4 consumes the current selected batch, applies enriched metadata, runs the
+approved Ghidra decompilation path, and records per-function substitution
+artifacts.
 
 ## Required ghidra-agent-cli Commands
 
@@ -17,36 +18,41 @@ approved Ghidra decompilation path, and records per-function artifacts.
 - `ghidra-agent-cli ghidra verify-signatures`
 - `ghidra-agent-cli ghidra decompile`
 - `ghidra-agent-cli ghidra rebuild-project`
-- `ghidra-agent-cli progress mark-decompiled`
-- `ghidra-agent-cli progress show`
-- `ghidra-agent-cli progress list`
-- `ghidra-agent-cli gate check --phase P5`
+- `ghidra-agent-cli substitute add`
+- `ghidra-agent-cli substitute validate`
+- `ghidra-agent-cli gate check --phase P4`
 
 Queueing via `ghidra-queue.sh` and Java/headless helpers remains a backend
 detail. The public workflow surface is the CLI plus the YAML outputs below.
-When `decompilation/next-batch.yaml` is ready, prefer `ghidra-agent-cli ghidra decompile --batch`
-over per-function decompile loops.
+When `substitution/next-batch.yaml` is ready, process only functions with
+clear P3 names and signatures.
 
 ## Inputs
 
-- `artifacts/<target-id>/target-selection.yaml`
-- `artifacts/<target-id>/evidence-candidates.yaml`
 - `artifacts/<target-id>/baseline/*.yaml`
-- `artifacts/<target-id>/third-party/identified.yaml` and any vendored sources
-- `artifacts/<target-id>/decompilation/next-batch.yaml`
+- `artifacts/<target-id>/runtime/fixtures/`
+- `artifacts/<target-id>/runtime/hotpaths/call-chain.yaml`
+- `artifacts/<target-id>/third-party/identified.yaml`
+- `artifacts/<target-id>/third-party/pristine/<library>@<version>/`
+- `artifacts/<target-id>/third-party/compat/<library>@<version>/` if needed
+- `artifacts/<target-id>/metadata/renames.yaml`
+- `artifacts/<target-id>/metadata/signatures.yaml`
+- `artifacts/<target-id>/substitution/next-batch.yaml`
 
 ## Outputs
 
-- `artifacts/<target-id>/decompilation/progress.yaml`
-- `artifacts/<target-id>/decompilation/functions/<fn_id>/decompilation-record.yaml`
-- Additional per-function YAML such as semantic, rename, signature, or lint
-  reports when the workflow records them
+- `artifacts/<target-id>/substitution/functions/<fn_id>/capture.yaml`
+- `artifacts/<target-id>/substitution/functions/<fn_id>/substitution.yaml`
+- Additional per-function YAML such as blocked, injected, or follow-up records
+  when the workflow records them
 
 ## Exit Expectations
 
-- The selected functions are reflected in `progress.yaml`.
-- Each completed function has a `decompilation-record.yaml` with provenance.
-- P5 gate material is available under `decompilation/functions/<fn_id>/`.
+- Function-level I/O fixtures and capture YAML are recorded before coding a
+  substitute.
+- Each substituted function has a `substitution.yaml` with provenance, fixtures,
+  and status.
+- P4 gate material is available under `substitution/functions/<fn_id>/`.
 
 ## Constraints
 
@@ -54,9 +60,13 @@ over per-function decompile loops.
 - Acquire the Ghidra queue/lock before mutating or reading shared Ghidra state
   when the backend requires it.
 - Do not modify artifacts for functions outside the active batch.
-- Do not bypass `ghidra-agent-cli` for supported apply/verify/decompile/progress
-  actions.
+- Do not bypass `ghidra-agent-cli` for supported apply/verify/decompile,
+  substitution, fixture, or gate actions.
+- Do not modify pristine third-party source; place compatibility changes under
+  `third-party/compat/`.
+- Do not create or run a new Ghidra script if the CLI lacks a capability; pause
+  and ask the user first.
 
 ## Next Step
 
-- P5 gate passes for the batch → `headless-ghidra-frida-verify`
+- P4 gate passes for the batch → return to P3 for another round or finish.

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DeviceInfo {
@@ -113,15 +113,21 @@ pub fn check_frida_available() -> Result<String> {
 pub fn run_frida_with_device(
     selector: &DeviceSelector,
     script: &str,
+    output_log: Option<&std::path::Path>,
     spawn_target: Option<&str>,
     extra_args: &[&str],
     timeout_secs: u64,
 ) -> Result<(String, String)> {
     let mut cmd = Command::new("frida");
     cmd.args(selector.to_frida_args());
+    cmd.arg("-q").arg("-t").arg(timeout_secs.to_string());
 
     if let Some(target) = spawn_target {
         cmd.arg("-f").arg(target);
+    }
+
+    if let Some(path) = output_log {
+        cmd.arg("-o").arg(path);
     }
 
     cmd.arg("-l").arg(script);
@@ -146,6 +152,7 @@ fn tokio_process_wrap(
     use std::io::Read;
     use std::time::Duration;
 
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn()?;
 
     let timeout = Duration::from_secs(timeout_secs);

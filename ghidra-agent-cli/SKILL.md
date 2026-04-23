@@ -1,6 +1,6 @@
 ---
 name: "ghidra-agent-cli"
-description: "Rust CLI reference for the headless-ghidra pipeline. Covers command syntax, flags, output contract, artifact paths, and workspace layout for all ghidra-agent-cli subcommands. Load when: constructing a ghidra-agent-cli command, interpreting its output, resolving a flag or artifact path question, or debugging CLI behavior. Do not load for P0–P6 workflow sequencing — use the headless-ghidra skill family instead."
+description: "Rust CLI reference for the headless-ghidra pipeline. Covers command syntax, flags, output contract, artifact paths, and workspace layout for all ghidra-agent-cli subcommands. Load when: constructing a ghidra-agent-cli command, interpreting its output, resolving a flag or artifact path question, or debugging CLI behavior. Do not load for P0–P4 workflow sequencing — use the headless-ghidra skill family instead."
 ---
 
 # ghidra-agent-cli
@@ -11,7 +11,7 @@ description: "Rust CLI reference for the headless-ghidra pipeline. Covers comman
 command tree, workspace layout, YAML artifact semantics, output envelope, and
 runtime behavior for supported Ghidra, Frida, progress, and gate operations.
 
-This skill documents **how to use the CLI**. It does **not** define the P0–P6
+This skill documents **how to use the CLI**. It does **not** define the P0–P4
 workflow order, stage routing, or orchestration policy. Those are defined by
 `headless-ghidra/SKILL.md` and the per-phase skills.
 
@@ -72,9 +72,14 @@ Global flags:
 | `workspace` | Initialize a target workspace and manage phase state |
 | `scope` | Manage `scope.yaml` |
 | `functions` / `callgraph` / `types` / `vtables` / `constants` / `strings` / `imports` | Manage baseline YAML metadata |
-| `third-party` | Manage `third-party/identified.yaml` and vendored source metadata |
+| `third-party` | Manage `third-party/identified.yaml`, explicit no-third-party reviews, and pristine source metadata |
+| `runtime` | Manage `runtime/run-manifest.yaml` and `runtime/run-records/*.yaml` |
+| `hotpath` | Manage `runtime/hotpaths/call-chain.yaml` |
+| `metadata` | Manage P3 metadata YAML such as `metadata/renames.yaml` and `metadata/signatures.yaml` |
+| `substitute` | Manage P4 substitution records under `substitution/functions/<fn_id>/` |
+| `git-check` | Validate artifact YAML files are tracked or staged in git |
 | `execution-log` | Append and inspect execution records |
-| `progress` | Manage `decompilation/progress.yaml` and `decompilation/next-batch.yaml` |
+| `progress` | Compatibility helpers for legacy decompilation progress YAML |
 | `gate` | Run aggregate gate checks and inspect gate reports |
 | `ghidra` | Discover Ghidra, import/analyze, export baseline, apply changes, decompile, rebuild |
 | `frida` | Device, capture, compare, trace, run, and invoke helpers |
@@ -103,17 +108,29 @@ artifacts/<target-id>/
 │   ├── constants.yaml
 │   ├── strings.yaml
 │   └── imports.yaml
+├── runtime/
+│   ├── project/
+│   ├── fixtures/
+│   ├── run-manifest.yaml
+│   ├── run-records/
+│   └── hotpaths/call-chain.yaml
 ├── third-party/
 │   ├── identified.yaml
-│   └── sources/
-├── evidence-candidates.yaml
-├── target-selection.yaml
-├── decompilation/
-│   ├── progress.yaml
+│   ├── pristine/<library>@<version>/
+│   └── compat/<library>@<version>/
+├── metadata/
+│   ├── renames.yaml
+│   ├── signatures.yaml
+│   ├── types.yaml
+│   ├── constants.yaml
+│   ├── strings.yaml
+│   └── apply-records/
+├── substitution/
+│   ├── template/
 │   ├── next-batch.yaml
 │   └── functions/<fn_id>/
-│       ├── decompilation-record.yaml
-│       └── verification-result.yaml
+│       ├── capture.yaml
+│       └── substitution.yaml
 ├── gates/
 └── scripts/
 ```
@@ -129,13 +146,16 @@ artifacts.
 | `pipeline-state.yaml` | Current target, current phase, recorded binary path |
 | `scope.yaml` | Explicit scope mode and entry list |
 | `baseline/*.yaml` | Baseline metadata exported from Ghidra or curated through CLI commands |
-| `third-party/identified.yaml` | Identified libraries plus function classifications |
-| `evidence-candidates.yaml` | P2 evidence review output consumed by discovery |
-| `target-selection.yaml` | P3 selected target/candidate set |
-| `decompilation/progress.yaml` | Decompilation state per function |
-| `decompilation/next-batch.yaml` | Current computed batch |
-| `decompilation/functions/<fn_id>/decompilation-record.yaml` | Per-function decompilation provenance and metadata |
-| `decompilation/functions/<fn_id>/verification-result.yaml` | Per-function runtime verification result |
+| `runtime/run-manifest.yaml` | P1 reproducible runtime manifest and run-record index |
+| `runtime/run-records/*.yaml` | P1 concrete executable or harness run observations |
+| `runtime/hotpaths/call-chain.yaml` | P1 Frida-derived hotpath call-chain priority source |
+| `third-party/identified.yaml` | Identified libraries, versions, evidence, source paths, pristine paths, and function classifications; `libraries: []` records an explicit no-third-party review |
+| `third-party/pristine/<library>@<version>/` | Unmodified third-party source snapshot that must remain pristine |
+| `third-party/compat/<library>@<version>/` | Compatibility modifications separate from pristine source |
+| `metadata/*.yaml` | P3 recovered names, signatures, types, constants, and strings before CLI-mediated Ghidra apply |
+| `metadata/apply-records/*.yaml` | P3 records for serialized metadata apply attempts |
+| `substitution/next-batch.yaml` | P4 substitution worklist |
+| `substitution/functions/<fn_id>/*.yaml` | P4 function fixtures, captures, substitution records, status, and follow-up data |
 | `gates/*-report.yaml` | Persisted gate check reports |
 
 ## Output Contract
@@ -190,9 +210,11 @@ ghidra-agent-cli --target libfoo ghidra auto-analyze
 ghidra-agent-cli --target libfoo ghidra export-baseline
 ghidra-agent-cli --target libfoo functions list
 
-# Progress and gate checks
-ghidra-agent-cli --target libfoo progress compute-next-batch --max 8
-ghidra-agent-cli --target libfoo ghidra decompile --batch
+# Runtime, metadata, substitution, and gate checks
+ghidra-agent-cli --target libfoo runtime record --key entrypoint --value 0x401000
+ghidra-agent-cli --target libfoo hotpath add --addr 0x401000 --reason runtime
+ghidra-agent-cli --target libfoo metadata enrich-function --addr 0x401000 --name main --prototype 'int(void)'
+ghidra-agent-cli --target libfoo substitute add --fn-id fn_001 --addr 0x401000 --replacement 'return 0;'
 ghidra-agent-cli --target libfoo gate check --phase P1
 
 # Frida helpers
@@ -204,6 +226,6 @@ ghidra-agent-cli frida trace --target ./bin/app --functions open,read
 
 - Use this skill to answer: command names, flags, output shape, artifact paths,
   file semantics, and CLI behavior.
-- Do not use this skill as the source of truth for P0–P6 sequencing, stage
+- Do not use this skill as the source of truth for P0–P4 sequencing, stage
   ownership, or workflow decisions. Those live in the `headless-ghidra` skill
   family.

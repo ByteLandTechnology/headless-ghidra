@@ -46,7 +46,15 @@ pub fn init_target(workspace: &Path, target: &str, binary: &Path) -> Result<()> 
     // artifacts/<id>/ — all analysis data (committed)
     let ad = artifact_dir(workspace, target);
     std::fs::create_dir_all(ad.join("baseline"))?;
-    std::fs::create_dir_all(ad.join("third-party").join("sources"))?;
+    std::fs::create_dir_all(ad.join("runtime").join("project"))?;
+    std::fs::create_dir_all(ad.join("runtime").join("fixtures"))?;
+    std::fs::create_dir_all(ad.join("runtime").join("run-records"))?;
+    std::fs::create_dir_all(ad.join("runtime").join("hotpaths"))?;
+    std::fs::create_dir_all(ad.join("third-party").join("pristine"))?;
+    std::fs::create_dir_all(ad.join("third-party").join("compat"))?;
+    std::fs::create_dir_all(ad.join("metadata").join("apply-records"))?;
+    std::fs::create_dir_all(ad.join("substitution").join("template"))?;
+    std::fs::create_dir_all(ad.join("substitution").join("functions"))?;
     std::fs::create_dir_all(ad.join("decompilation").join("functions"))?;
     std::fs::create_dir_all(ad.join("gates"))?;
     std::fs::create_dir_all(ad.join("scripts"))?;

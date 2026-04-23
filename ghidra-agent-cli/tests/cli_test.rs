@@ -21,6 +21,127 @@ fn init_workspace(tmp: &TempDir, target: &str) {
         .success();
 }
 
+fn artifact_dir(tmp: &TempDir, target: &str) -> std::path::PathBuf {
+    tmp.path().join("artifacts").join(target)
+}
+
+fn add_minimal_p1_baseline(tmp: &TempDir, target: &str) {
+    let workspace = tmp.path().to_str().unwrap();
+
+    cli()
+        .args(["--workspace", workspace, "--target", target])
+        .args(["functions", "add"])
+        .args(["--addr", "0x1000", "--name", "main"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", target])
+        .args(["callgraph", "add-edge"])
+        .args(["--from", "0x1000", "--to", "0x1000"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", target])
+        .args(["types", "add"])
+        .args([
+            "--name",
+            "int",
+            "--kind",
+            "typedef",
+            "--definition",
+            "typedef int int_t;",
+        ])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", target])
+        .args(["vtables", "add"])
+        .args(["--class-name", "TestClass", "--addr", "0x2000"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", target])
+        .args(["constants", "add"])
+        .args(["--addr", "0x3000", "--name", "MAX"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", target])
+        .args(["strings", "add"])
+        .args(["--addr", "0x4000", "--content", "hello"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", target])
+        .args(["imports", "add"])
+        .args(["--library", "libc", "--symbol", "malloc"])
+        .assert()
+        .success();
+}
+
+fn add_runtime_record(tmp: &TempDir, target: &str, key: &str, value: &str) {
+    cli()
+        .args([
+            "--workspace",
+            tmp.path().to_str().unwrap(),
+            "--target",
+            target,
+        ])
+        .args(["runtime", "record"])
+        .args(["--key", key, "--value", value])
+        .assert()
+        .success();
+}
+
+fn add_hotpath(tmp: &TempDir, target: &str, addr: &str) {
+    cli()
+        .args([
+            "--workspace",
+            tmp.path().to_str().unwrap(),
+            "--target",
+            target,
+        ])
+        .args(["hotpath", "add"])
+        .args(["--addr", addr, "--reason", "runtime sample"])
+        .assert()
+        .success();
+}
+
+fn add_metadata(tmp: &TempDir, target: &str, addr: &str) {
+    cli()
+        .args([
+            "--workspace",
+            tmp.path().to_str().unwrap(),
+            "--target",
+            target,
+        ])
+        .args(["metadata", "enrich-function"])
+        .args(["--addr", addr, "--name", "main", "--prototype", "int(void)"])
+        .assert()
+        .success();
+}
+
+fn add_substitution(tmp: &TempDir, target: &str, fn_id: &str, addr: &str) {
+    cli()
+        .args([
+            "--workspace",
+            tmp.path().to_str().unwrap(),
+            "--target",
+            target,
+        ])
+        .args(["substitute", "add"])
+        .args([
+            "--fn-id",
+            fn_id,
+            "--addr",
+            addr,
+            "--replacement",
+            "return 0;",
+        ])
+        .assert()
+        .success();
+}
+
 #[cfg(unix)]
 fn install_fake_ghidra(tmp: &TempDir) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt;
@@ -55,6 +176,7 @@ prev=""
 for arg in "$@"; do
   if [ "$prev" = "-postScript" ]; then
     script="$arg"
+    script="${script##*/}"
     prev=""
     collect_args=1
     continue
@@ -847,6 +969,669 @@ fn gate_check_p0_passes_after_init() {
         .assert()
         .success()
         .stdout(predicate::str::contains("gate check passed"));
+}
+
+#[test]
+fn p0_p4_artifact_groups_validate_and_gate() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    let workspace = tmp.path().to_str().unwrap();
+
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["functions", "add"])
+        .args(["--addr", "0x1000", "--name", "main"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["callgraph", "add-edge"])
+        .args(["--from", "0x1000", "--to", "0x1000"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["types", "add"])
+        .args([
+            "--name",
+            "int",
+            "--kind",
+            "typedef",
+            "--definition",
+            "typedef int int_t;",
+        ])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["vtables", "add"])
+        .args(["--class-name", "TestClass", "--addr", "0x2000"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["constants", "add"])
+        .args(["--addr", "0x3000", "--name", "MAX"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["strings", "add"])
+        .args(["--addr", "0x4000", "--content", "hello"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["imports", "add"])
+        .args(["--library", "libc", "--symbol", "malloc"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["runtime", "record"])
+        .args(["--key", "entrypoint", "--value", "0x1000"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["hotpath", "add"])
+        .args(["--addr", "0x1000", "--reason", "runtime sample"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["runtime", "validate"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["gate", "check", "--phase", "P1"])
+        .assert()
+        .success();
+
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["third-party", "add"])
+        .args([
+            "--library",
+            "zlib",
+            "--version",
+            "1.2.13",
+            "--confidence",
+            "high",
+        ])
+        .assert()
+        .success();
+    let source = tmp.path().join("zlib-src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("README"), "upstream").unwrap();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["third-party", "vendor-pristine"])
+        .args([
+            "--library",
+            "zlib",
+            "--source-path",
+            source.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["third-party", "classify-function"])
+        .args(["--addr", "0x1000", "--classification", "library"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["gate", "check", "--phase", "P2"])
+        .assert()
+        .success();
+
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["metadata", "enrich-function"])
+        .args([
+            "--addr",
+            "0x1000",
+            "--name",
+            "main",
+            "--prototype",
+            "int(void)",
+        ])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["metadata", "validate"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["hotpath", "validate"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["gate", "check", "--phase", "P3"])
+        .assert()
+        .success();
+
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["substitute", "add"])
+        .args([
+            "--fn-id",
+            "fn_001",
+            "--addr",
+            "0x1000",
+            "--replacement",
+            "return 0;",
+        ])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["substitute", "validate"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", workspace, "--target", "libtest"])
+        .args(["gate", "check", "--phase", "P4"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn p1_gate_rejects_missing_or_empty_runtime_artifacts() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    add_minimal_p1_baseline(&tmp, "libtest");
+    add_runtime_record(&tmp, "libtest", "entrypoint", "0x1000");
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["gate", "check", "--phase", "P1"])
+        .assert()
+        .failure()
+        .stdout(
+            predicate::str::contains("gate check failed")
+                .and(predicate::str::contains("P1_hotpath_call_chain")),
+        );
+
+    let ad = artifact_dir(&tmp, "libtest");
+    std::fs::remove_file(
+        ad.join("runtime")
+            .join("run-records")
+            .join("entrypoint.yaml"),
+    )
+    .unwrap();
+    std::fs::write(
+        ad.join("runtime").join("hotpaths").join("call-chain.yaml"),
+        "target: libtest\nfunctions: []\n",
+    )
+    .unwrap();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["gate", "check", "--phase", "P1"])
+        .assert()
+        .failure()
+        .stdout(
+            predicate::str::contains("P1_run_records")
+                .and(predicate::str::contains("missing run record"))
+                .and(predicate::str::contains("P1_hotpath_call_chain")),
+        );
+}
+
+#[test]
+fn runtime_validate_rejects_stale_manifest_record_references() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    add_runtime_record(&tmp, "libtest", "entrypoint", "0x1000");
+    let record = artifact_dir(&tmp, "libtest")
+        .join("runtime")
+        .join("run-records")
+        .join("entrypoint.yaml");
+    std::fs::remove_file(record).unwrap();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["runtime", "validate"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("failed to read")
+                .or(predicate::str::contains("No such file")
+                    .or(predicate::str::contains("missing"))),
+        );
+}
+
+#[test]
+fn p3_gate_rejects_hotpath_without_matching_rename_or_signature() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    add_hotpath(&tmp, "libtest", "0x1000");
+    add_metadata(&tmp, "libtest", "0x2000");
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["gate", "check", "--phase", "P3"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("0x1000 missing rename"));
+
+    let metadata_dir = artifact_dir(&tmp, "libtest").join("metadata");
+    std::fs::write(
+        metadata_dir.join("renames.yaml"),
+        "target: libtest\nrenames:\n  - addr: \"0x1000\"\n    name: main\n",
+    )
+    .unwrap();
+    std::fs::write(
+        metadata_dir.join("signatures.yaml"),
+        "target: libtest\nsignatures:\n  - addr: \"0x2000\"\n    prototype: int(void)\n",
+    )
+    .unwrap();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["gate", "check", "--phase", "P3"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("0x1000 missing signature"));
+}
+
+#[test]
+fn p4_gate_rejects_empty_fixtures_and_missing_p3_metadata() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    add_metadata(&tmp, "libtest", "0x1000");
+    add_substitution(&tmp, "libtest", "fn_001", "0x1000");
+
+    let functions_dir = artifact_dir(&tmp, "libtest")
+        .join("substitution")
+        .join("functions");
+    std::fs::write(
+        functions_dir.join("fn_001").join("substitution.yaml"),
+        r#"target: libtest
+fn_id: fn_001
+addr: "0x1000"
+replacement: return 0;
+fixtures: []
+status: recorded
+"#,
+    )
+    .unwrap();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["gate", "check", "--phase", "P4"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("has no fixtures"));
+
+    add_substitution(&tmp, "libtest", "fn_002", "0x2000");
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["gate", "check", "--phase", "P4"])
+        .assert()
+        .failure()
+        .stdout(
+            predicate::str::contains("0x2000 missing metadata rename").and(
+                predicate::str::contains("0x2000 missing metadata signature"),
+            ),
+        );
+}
+
+#[test]
+fn p2_gate_rejects_libraries_without_source_or_pristine_dirs() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["third-party", "add"])
+        .args([
+            "--library",
+            "zlib",
+            "--version",
+            "1.2.13",
+            "--confidence",
+            "high",
+        ])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["third-party", "classify-function"])
+        .args(["--addr", "0x1000", "--classification", "library"])
+        .assert()
+        .success();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["gate", "check", "--phase", "P2"])
+        .assert()
+        .failure()
+        .stdout(
+            predicate::str::contains("zlib missing source_path")
+                .and(predicate::str::contains("zlib missing pristine_path")),
+        );
+
+    std::fs::write(
+        artifact_dir(&tmp, "libtest")
+            .join("third-party")
+            .join("identified.yaml"),
+        r#"target: libtest
+libraries:
+  - library: zlib
+    version: 1.2.13
+    confidence: high
+    source_path: /tmp/zlib-src
+    pristine_path: third-party/pristine/zlib@1.2.13
+    function_classifications:
+      - addr: "0x1000"
+        classification: library
+"#,
+    )
+    .unwrap();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["gate", "check", "--phase", "P2"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("zlib pristine directory missing"));
+}
+
+#[test]
+fn p2_gate_accepts_explicit_empty_third_party_review() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["third-party", "none"])
+        .args(["--evidence", "review found no third-party libraries"])
+        .assert()
+        .success();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["gate", "check", "--phase", "P2"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("gate check passed"));
+}
+
+#[test]
+fn git_check_rejects_untracked_nested_p1_and_p4_yaml_until_added() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    ProcessCommand::new("git")
+        .arg("init")
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+    ProcessCommand::new("git")
+        .args(["add", "artifacts"])
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+
+    let ad = artifact_dir(&tmp, "libtest");
+    let nested_record_dir = ad.join("runtime").join("run-records").join("manual");
+    std::fs::create_dir_all(&nested_record_dir).unwrap();
+    std::fs::write(
+        nested_record_dir.join("nested.yaml"),
+        "target: libtest\nrun_id: nested\nstatus: recorded\nobservations: []\n",
+    )
+    .unwrap();
+    let nested_substitution_dir = ad.join("substitution").join("functions").join("fn_nested");
+    std::fs::create_dir_all(&nested_substitution_dir).unwrap();
+    std::fs::write(
+        nested_substitution_dir.join("substitution.yaml"),
+        r#"target: libtest
+fn_id: fn_nested
+addr: "0x1000"
+replacement: return 0;
+fixtures:
+  - fixture_id: fixture_001
+    source: test
+status: recorded
+"#,
+    )
+    .unwrap();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["git-check", "validate"])
+        .assert()
+        .failure()
+        .stdout(
+            predicate::str::contains("git-check validation failed")
+                .and(predicate::str::contains(
+                    "runtime/run-records/manual/nested.yaml",
+                ))
+                .and(predicate::str::contains(
+                    "substitution/functions/fn_nested/substitution.yaml",
+                )),
+        );
+
+    ProcessCommand::new("git")
+        .args(["add", "artifacts"])
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["git-check", "validate"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("git-check validation passed"));
+
+    assert!(
+        !ad.join("gates").join("git-check.yaml").exists(),
+        "git-check validate should not create an untracked self-report artifact"
+    );
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["git-check", "validate"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("git-check validation passed"));
+}
+
+#[test]
+fn legacy_gate_phases_are_accepted_as_deprecated() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+
+    for phase in ["P0.5", "P5", "P6"] {
+        cli()
+            .args(["--workspace", tmp.path().to_str().unwrap()])
+            .args(["--target", "libtest"])
+            .args(["gate", "check", "--phase", phase])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("deprecated"));
+    }
+}
+
+#[test]
+fn vendor_pristine_records_pristine_path_without_git_commit() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    ProcessCommand::new("git")
+        .arg("init")
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+    let source = tmp.path().join("zlib-src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("README"), "upstream").unwrap();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["third-party", "add"])
+        .args(["--library", "zlib", "--version", "1.2.13"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["third-party", "vendor-pristine"])
+        .args([
+            "--library",
+            "zlib",
+            "--source-path",
+            source.to_str().unwrap(),
+            "--commit",
+        ])
+        .assert()
+        .success();
+
+    let identified = std::fs::read_to_string(
+        tmp.path()
+            .join("artifacts")
+            .join("libtest")
+            .join("third-party")
+            .join("identified.yaml"),
+    )
+    .unwrap();
+    assert!(identified.contains("pristine_path: third-party/pristine/zlib@1.2.13"));
+    assert!(identified.contains("source_path:"));
+    assert!(!identified.contains("vendored_path:"));
+    assert!(
+        ProcessCommand::new("git")
+            .args(["rev-parse", "--verify", "HEAD"])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap()
+            .code()
+            .unwrap_or(1)
+            != 0
+    );
+}
+
+#[test]
+fn vendor_pristine_sanitizes_library_and_version_path_components() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    let source = tmp.path().join("pkg-src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("README"), "upstream").unwrap();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["third-party", "add"])
+        .args(["--library", "scope/pkg", "--version", "../1.2.3"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["third-party", "vendor-pristine"])
+        .args([
+            "--library",
+            "scope/pkg",
+            "--source-path",
+            source.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let ad = artifact_dir(&tmp, "libtest");
+    assert!(ad.join("third-party/pristine/scope_pkg@.._1.2.3").is_dir());
+    assert!(!ad.join("third-party/1.2.3").exists());
+}
+
+#[test]
+fn substitute_add_rejects_unsafe_fn_id_path_components() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["substitute", "add"])
+        .args([
+            "--fn-id",
+            "../escape",
+            "--addr",
+            "0x1000",
+            "--replacement",
+            "return 0;",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("fn-id must contain only ASCII"));
+
+    assert!(
+        !artifact_dir(&tmp, "libtest")
+            .join("substitution")
+            .join("escape")
+            .exists()
+    );
+}
+
+#[test]
+fn git_check_and_gate_require_tracked_or_staged_artifacts_in_git_repo() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    ProcessCommand::new("git")
+        .arg("init")
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["gate", "check", "--phase", "P0"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("git_tracking"));
+
+    ProcessCommand::new("git")
+        .args(["add", "artifacts"])
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["git-check", "validate"])
+        .assert()
+        .success();
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["gate", "check", "--phase", "P0"])
+        .assert()
+        .success();
 }
 
 // ---------------------------------------------------------------------------

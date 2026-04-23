@@ -218,6 +218,26 @@ pub fn structured_help(path: &[String]) -> Option<HelpDocument> {
                     summary: "Manage third-party library metadata".into(),
                 },
                 HelpSubcommand {
+                    name: "runtime".into(),
+                    summary: "Record P1 runtime manifests and run records".into(),
+                },
+                HelpSubcommand {
+                    name: "hotpath".into(),
+                    summary: "Record P1 runtime hotpath call chains".into(),
+                },
+                HelpSubcommand {
+                    name: "metadata".into(),
+                    summary: "Record P3 function metadata enrichment".into(),
+                },
+                HelpSubcommand {
+                    name: "substitute".into(),
+                    summary: "Record P4 function substitutions".into(),
+                },
+                HelpSubcommand {
+                    name: "git-check".into(),
+                    summary: "Validate artifact git tracking/staging".into(),
+                },
+                HelpSubcommand {
                     name: "execution-log".into(),
                     summary: "Manage execution log entries".into(),
                 },
@@ -851,6 +871,10 @@ pub fn structured_help(path: &[String]) -> Option<HelpDocument> {
                     summary: "Add a third-party library entry".into(),
                 },
                 HelpSubcommand {
+                    name: "none".into(),
+                    summary: "Record an explicit no-third-party review".into(),
+                },
+                HelpSubcommand {
                     name: "set-version".into(),
                     summary: "Set the version of a library".into(),
                 },
@@ -871,11 +895,149 @@ pub fn structured_help(path: &[String]) -> Option<HelpDocument> {
             exit_behavior: standard_exit_codes(),
             description: vec![
                 "Tracks third-party libraries detected in the binary, including".into(),
-                "version, vendor status, and function classification.".into(),
+                "version, pristine source status, and function classification.".into(),
+                "Use 'none' to record that review found no third-party libraries.".into(),
             ],
             examples: vec![HelpExample {
                 command: format!("{SKILL_NAME} third-party list"),
                 description: "List all third-party libraries".into(),
+            }],
+        }),
+
+        // =================================================================
+        // P0-P4 artifact command containers
+        // =================================================================
+        ["runtime"] => Some(HelpDocument {
+            command_path: vec![SKILL_NAME.into(), "runtime".into()],
+            purpose: "Record P1 runtime manifests and run records".into(),
+            usage: format!("{SKILL_NAME} runtime <COMMAND> [OPTIONS]"),
+            arguments: vec![],
+            options: vec![opt_workspace(), opt_format()],
+            subcommands: vec![
+                HelpSubcommand {
+                    name: "record".into(),
+                    summary: "Record a runtime observation and run record".into(),
+                },
+                HelpSubcommand {
+                    name: "validate".into(),
+                    summary: "Validate runtime/run-manifest.yaml".into(),
+                },
+            ],
+            output_formats: standard_formats(),
+            exit_behavior: standard_exit_codes(),
+            description: vec![
+                "Runtime commands write artifacts/<target>/runtime/run-manifest.yaml".into(),
+                "and runtime/run-records/*.yaml for the P1 gate.".into(),
+            ],
+            examples: vec![HelpExample {
+                command: format!("{SKILL_NAME} runtime record --key entrypoint --value 0x1000"),
+                description: "Record a simple runtime observation".into(),
+            }],
+        }),
+        ["hotpath"] => Some(HelpDocument {
+            command_path: vec![SKILL_NAME.into(), "hotpath".into()],
+            purpose: "Record P1 runtime hotpath call chains".into(),
+            usage: format!("{SKILL_NAME} hotpath <COMMAND> [OPTIONS]"),
+            arguments: vec![],
+            options: vec![opt_workspace(), opt_format()],
+            subcommands: vec![
+                HelpSubcommand {
+                    name: "add".into(),
+                    summary: "Add a hotpath function entry".into(),
+                },
+                HelpSubcommand {
+                    name: "validate".into(),
+                    summary: "Validate runtime/hotpaths/call-chain.yaml".into(),
+                },
+            ],
+            output_formats: standard_formats(),
+            exit_behavior: standard_exit_codes(),
+            description: vec![
+                "Hotpath commands write artifacts/<target>/runtime/hotpaths/call-chain.yaml."
+                    .into(),
+            ],
+            examples: vec![HelpExample {
+                command: format!("{SKILL_NAME} hotpath add --addr 0x1000 --reason runtime"),
+                description: "Record a hotpath address".into(),
+            }],
+        }),
+        ["metadata"] => Some(HelpDocument {
+            command_path: vec![SKILL_NAME.into(), "metadata".into()],
+            purpose: "Record P3 function metadata enrichment".into(),
+            usage: format!("{SKILL_NAME} metadata <COMMAND> [OPTIONS]"),
+            arguments: vec![],
+            options: vec![opt_workspace(), opt_format()],
+            subcommands: vec![
+                HelpSubcommand {
+                    name: "enrich-function".into(),
+                    summary: "Record a function name and signature".into(),
+                },
+                HelpSubcommand {
+                    name: "validate".into(),
+                    summary: "Validate metadata renames and signatures".into(),
+                },
+            ],
+            output_formats: standard_formats(),
+            exit_behavior: standard_exit_codes(),
+            description: vec![
+                "Metadata commands write metadata/renames.yaml, metadata/signatures.yaml,".into(),
+                "and metadata/apply-records/*.yaml before CLI-mediated Ghidra apply steps.".into(),
+            ],
+            examples: vec![HelpExample {
+                command: format!(
+                    "{SKILL_NAME} metadata enrich-function --addr 0x1000 --name main --prototype 'int(void)'"
+                ),
+                description: "Record a recovered name and prototype".into(),
+            }],
+        }),
+        ["substitute"] => Some(HelpDocument {
+            command_path: vec![SKILL_NAME.into(), "substitute".into()],
+            purpose: "Record P4 function substitutions".into(),
+            usage: format!("{SKILL_NAME} substitute <COMMAND> [OPTIONS]"),
+            arguments: vec![],
+            options: vec![opt_workspace(), opt_format()],
+            subcommands: vec![
+                HelpSubcommand {
+                    name: "add".into(),
+                    summary: "Record a function substitution".into(),
+                },
+                HelpSubcommand {
+                    name: "validate".into(),
+                    summary: "Validate substitution function records".into(),
+                },
+            ],
+            output_formats: standard_formats(),
+            exit_behavior: standard_exit_codes(),
+            description: vec![
+                "Substitute commands write substitution/functions/<fn_id>/substitution.yaml".into(),
+                "and substitution/next-batch.yaml for the P4 gate.".into(),
+            ],
+            examples: vec![HelpExample {
+                command: format!(
+                    "{SKILL_NAME} substitute add --fn-id fn_001 --addr 0x1000 --replacement 'return 0;'"
+                ),
+                description: "Record a substitution skeleton".into(),
+            }],
+        }),
+        ["git-check"] => Some(HelpDocument {
+            command_path: vec![SKILL_NAME.into(), "git-check".into()],
+            purpose: "Validate artifact git tracking/staging".into(),
+            usage: format!("{SKILL_NAME} git-check <COMMAND> [OPTIONS]"),
+            arguments: vec![],
+            options: vec![opt_workspace(), opt_format()],
+            subcommands: vec![HelpSubcommand {
+                name: "validate".into(),
+                summary: "Validate all artifact YAML files are tracked or staged".into(),
+            }],
+            output_formats: standard_formats(),
+            exit_behavior: standard_exit_codes(),
+            description: vec![
+                "Git-check reports artifact YAML files that are untracked or unstaged".into(),
+                "in a git workspace without creating additional artifacts.".into(),
+            ],
+            examples: vec![HelpExample {
+                command: format!("{SKILL_NAME} git-check validate"),
+                description: "Check artifact git state".into(),
             }],
         }),
 
@@ -1698,12 +1860,18 @@ mod tests {
                 "third-party",
                 vec![
                     "add",
+                    "none",
                     "set-version",
                     "list",
                     "classify-function",
                     "vendor-pristine",
                 ],
             ),
+            ("runtime", vec!["record", "validate"]),
+            ("hotpath", vec!["add", "validate"]),
+            ("metadata", vec!["enrich-function", "validate"]),
+            ("substitute", vec!["add", "validate"]),
+            ("git-check", vec!["validate"]),
             ("execution-log", vec!["append", "list", "show"]),
             (
                 "progress",
@@ -1774,6 +1942,11 @@ mod tests {
             "strings",
             "imports",
             "third-party",
+            "runtime",
+            "hotpath",
+            "metadata",
+            "substitute",
+            "git-check",
             "execution-log",
             "progress",
             "gate",

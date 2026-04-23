@@ -1,19 +1,28 @@
 ---
 name: "headless-ghidra-baseline"
-description: "P1 sub-skill: run Ghidra import/analysis and export baseline YAML metadata without decompiling function bodies."
+description: "P1 sub-skill: run Ghidra import/analysis, export baseline YAML metadata, and prepare runtime observations without decompiling function bodies."
 phase: "P1"
 ---
 
-# Headless Ghidra Baseline — P1
+# Headless Ghidra Baseline+Runtime — P1
 
-P1 runs the initial Ghidra import and auto-analysis, then exports the baseline
-YAML metadata that the later phases consume.
+P1 runs the initial Ghidra import and auto-analysis, exports baseline YAML
+metadata, makes the target reproducibly runnable, and records runtime/hotpath
+YAML that later phases consume.
 
 ## Required ghidra-agent-cli Commands
 
 - `ghidra-agent-cli ghidra import`
 - `ghidra-agent-cli ghidra auto-analyze`
 - `ghidra-agent-cli ghidra export-baseline`
+- `ghidra-agent-cli frida device-list`
+- `ghidra-agent-cli frida device-attach`
+- `ghidra-agent-cli frida io-capture`
+- `ghidra-agent-cli frida trace`
+- `ghidra-agent-cli runtime record`
+- `ghidra-agent-cli runtime validate`
+- `ghidra-agent-cli hotpath add`
+- `ghidra-agent-cli hotpath validate`
 - `ghidra-agent-cli gate check --phase P1`
 
 The shell wrappers and Java Ghidra scripts remain the backend implementation for
@@ -23,6 +32,7 @@ below.
 ## Inputs
 
 - `artifacts/<target-id>/pipeline-state.yaml`
+- `artifacts/<target-id>/scope.yaml`
 - `targets/<target-id>/ghidra-projects/`
 
 ## Outputs
@@ -34,12 +44,19 @@ below.
 - `artifacts/<target-id>/baseline/constants.yaml`
 - `artifacts/<target-id>/baseline/strings.yaml`
 - `artifacts/<target-id>/baseline/imports.yaml`
+- `artifacts/<target-id>/runtime/run-manifest.yaml`
+- `artifacts/<target-id>/runtime/run-records/*.yaml`
+- `artifacts/<target-id>/runtime/fixtures/**`
+- `artifacts/<target-id>/runtime/hotpaths/call-chain.yaml`
+- `artifacts/<target-id>/runtime/project/**` when a library harness is needed
 
 ## Exit Expectations
 
 - All required baseline YAML files exist and are readable.
-- The baseline set is sufficient for evidence review and target selection.
-- No P4/P5 decompilation artifacts are created in this phase.
+- Runtime availability or unavailability is recorded with reproducible
+  executable args or a C++/CMake library harness.
+- The P1 hotpath call-chain is available as the initial P3/P4 priority source.
+- No P4 decompilation artifacts are created in this phase.
 
 ## Constraints
 
@@ -48,6 +65,8 @@ below.
 - Do not modify `pipeline-state.yaml` except through sanctioned state changes.
 - Do not bypass `ghidra-agent-cli` for import, analysis, export, or supported
   gate checks.
+- Do not create or run a new Ghidra script if the CLI lacks a capability; pause
+  and ask the user first.
 
 ## Next Step
 

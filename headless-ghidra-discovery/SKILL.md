@@ -1,13 +1,15 @@
 ---
 name: "headless-ghidra-discovery"
-description: "P3 sub-skill: analyze verified boundaries, evidence, and progress to record the next target selection in YAML."
+description: "P3 sub-skill: enrich function names, signatures, types, constants, strings, and hotpath metadata in YAML before serialized CLI apply."
 phase: "P3"
 ---
 
-# Headless Ghidra Discovery — P3
+# Headless Ghidra Metadata Enrichment — P3
 
-P3 turns the reviewed evidence and current progress state into the next selected
-frontier target or batch.
+P3 enriches function metadata from third-party evidence and the P1 runtime
+hotpath call-chain. Analysis work may be parallelized while producing YAML, but
+all writes back to the Ghidra project must go through serialized
+`ghidra-agent-cli ghidra ...` commands.
 
 ## Required ghidra-agent-cli Commands
 
@@ -15,37 +17,50 @@ frontier target or batch.
 - `ghidra-agent-cli functions list`
 - `ghidra-agent-cli callgraph callers`
 - `ghidra-agent-cli callgraph callees`
-- `ghidra-agent-cli progress compute-next-batch`
-- `ghidra-agent-cli progress show`
-- `ghidra-agent-cli progress list`
+- `ghidra-agent-cli metadata enrich-function`
+- `ghidra-agent-cli metadata validate`
+- `ghidra-agent-cli hotpath validate`
+- `ghidra-agent-cli ghidra apply-renames`
+- `ghidra-agent-cli ghidra verify-renames`
+- `ghidra-agent-cli ghidra apply-signatures`
+- `ghidra-agent-cli ghidra verify-signatures`
 - `ghidra-agent-cli gate check --phase P3`
 
 ## Inputs
 
 - `artifacts/<target-id>/pipeline-state.yaml`
-- `artifacts/<target-id>/evidence-candidates.yaml`
+- `artifacts/<target-id>/runtime/hotpaths/call-chain.yaml`
+- `artifacts/<target-id>/third-party/identified.yaml`
 - `artifacts/<target-id>/baseline/functions.yaml`
 - `artifacts/<target-id>/baseline/callgraph.yaml`
-- `artifacts/<target-id>/decompilation/progress.yaml`
+- `artifacts/<target-id>/baseline/types.yaml`
 
 ## Outputs
 
-- `artifacts/<target-id>/target-selection.yaml`
-- Refreshed `artifacts/<target-id>/decompilation/next-batch.yaml`
+- `artifacts/<target-id>/metadata/renames.yaml`
+- `artifacts/<target-id>/metadata/signatures.yaml`
+- `artifacts/<target-id>/metadata/types.yaml`
+- `artifacts/<target-id>/metadata/constants.yaml`
+- `artifacts/<target-id>/metadata/strings.yaml`
+- `artifacts/<target-id>/metadata/apply-records/`
 
 ## Exit Expectations
 
-- `target-selection.yaml` records the chosen default target or candidate set.
-- `next-batch.yaml` reflects the currently selected worklist for downstream
-  decompilation.
-- The selection is reproducible from the recorded evidence and progress inputs.
+- Every function in `runtime/hotpaths/call-chain.yaml` has an explicit recovered
+  name and signature before P4 starts.
+- Metadata enrichment YAML is applied to the Ghidra project only through CLI
+  commands under the CLI lock.
+- The enrichment is reproducible from recorded baseline, runtime, and
+  third-party evidence.
 
 ## Constraints
 
 - Do not decompile anything in this phase.
 - Do not rewrite historical per-function outputs.
 - Do not bypass `ghidra-agent-cli` for supported state, baseline, callgraph,
-  progress, or gate operations.
+  metadata, Ghidra apply, or gate operations.
+- Do not create or run a new Ghidra script if the CLI lacks a capability; pause
+  and ask the user first.
 
 ## Next Step
 

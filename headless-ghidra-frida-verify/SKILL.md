@@ -1,14 +1,14 @@
 ---
 name: "headless-ghidra-frida-verify"
-description: "P6 sub-skill: record runtime behavior with Frida, compare reconstructed outputs, and write verification YAML results."
+description: "Deprecated compatibility-only P6 alias: runtime observation is now part of P1/P4 hand-offs."
 phase: "P6"
 ---
 
 # Headless Ghidra Frida Verify — P6
 
-P6 verifies selected decompiled functions by capturing runtime behavior,
-executing the reconstructed implementation, and writing the comparison result as
-YAML.
+Deprecated compatibility-only alias. Runtime observation is now part of the
+P1 baseline/runtime setup and P4 function-substitution hand-off; do not route
+new workflows here as a primary pipeline stage.
 
 ## Required ghidra-agent-cli Commands
 
@@ -25,20 +25,22 @@ YAML.
 
 ## Inputs
 
-- `artifacts/<target-id>/decompilation/functions/<fn_id>/decompilation-record.yaml`
-- Any function-local decompilation outputs needed by the verification harness
+- `artifacts/<target-id>/substitution/functions/<fn_id>/substitution.yaml`
+- `artifacts/<target-id>/substitution/functions/<fn_id>/capture.yaml`
+- Any function-local substitution outputs needed by the verification harness
 - Verification binary or harness configuration
 - Optional manual test-case YAML provided by the operator
 
 ## Outputs
 
-- `artifacts/<target-id>/decompilation/functions/<fn_id>/verification-result.yaml`
+- Compatibility verification YAML under
+  `artifacts/<target-id>/substitution/functions/<fn_id>/`
 - Optional function-local recording or input YAML such as runtime captures,
   fuzz inputs, and comparison reports
 
 ## Exit Expectations
 
-- `verification-result.yaml` exists for every verified function.
+- Verification status is explicit for every verified compatibility function.
 - Verification status and verdict are explicit and reviewable.
 - Divergences are recorded rather than silently repaired in-place.
 
@@ -53,4 +55,4 @@ YAML.
 ## Next Step
 
 - All selected functions verified → return to P3 for another round or finish.
-- Diverged functions → schedule for another P4+P5 iteration.
+- Diverged functions → schedule for another P4 iteration.

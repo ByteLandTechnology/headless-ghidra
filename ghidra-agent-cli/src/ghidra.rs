@@ -283,10 +283,16 @@ fn run_headless_impl(
     let headless = ghidra_dir.join("support").join("analyzeHeadless");
     let scripts_dir = resolve_scripts_dir(workspace, ghidra_dir);
     let use_bundled_entry = should_use_bundled_entry(script, &scripts_dir);
-    let post_script = if use_bundled_entry {
+    let post_script_name = if use_bundled_entry {
         BUNDLED_ENTRY_SCRIPT_NAME
     } else {
         script
+    };
+    let post_script_path = scripts_dir.join(post_script_name);
+    let post_script = if post_script_path.is_file() {
+        post_script_path.to_string_lossy().into_owned()
+    } else {
+        post_script_name.to_string()
     };
     let mut cmd = std::process::Command::new(&headless);
     cmd.arg(project_dir).arg(target);
@@ -296,7 +302,7 @@ fn run_headless_impl(
         cmd.arg("-process").arg(name);
     }
 
-    cmd.arg("-postScript").arg(post_script);
+    cmd.arg("-postScript").arg(&post_script);
     if use_bundled_entry {
         cmd.arg(logical_script_name(script));
     }

@@ -6,7 +6,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use ghidra_agent_cli::{
     Format, StructuredError, baseline, context, execution_log, gate, ghidra, lock, ok_output,
-    ok_output_with_data, paths, progress, scope, serialize_value, third_party, workspace,
+    ok_output_with_data, paths, progress, schema, scope, serialize_value, third_party, workspace,
     write_structured_error,
 };
 
@@ -58,7 +58,7 @@ impl Phase {
     }
 }
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // Output format
@@ -165,6 +165,16 @@ pub enum Commands {
     Imports(ImportsCmd),
     #[command(subcommand)]
     ThirdParty(ThirdPartyCmd),
+    #[command(subcommand)]
+    Runtime(RuntimeCmd),
+    #[command(subcommand)]
+    Hotpath(HotpathCmd),
+    #[command(subcommand)]
+    Metadata(MetadataCmd),
+    #[command(subcommand)]
+    Substitute(SubstituteCmd),
+    #[command(subcommand)]
+    GitCheck(GitCheckCmd),
     #[command(subcommand)]
     ExecutionLog(ExecutionLogCmd),
     #[command(subcommand)]
@@ -672,11 +682,12 @@ pub struct ImportsListArgs {
 }
 
 // ---------------------------------------------------------------------------
-// Container: third-party -> { add, set-version, list, classify-function, vendor-pristine }
+// Container: third-party -> { add, none, set-version, list, classify-function, vendor-pristine }
 // ---------------------------------------------------------------------------
 #[derive(Subcommand, Debug)]
 pub enum ThirdPartyCmd {
     Add(ThirdPartyAddArgs),
+    None(ThirdPartyNoneArgs),
     SetVersion(ThirdPartySetVersionArgs),
     List(ThirdPartyListArgs),
     ClassifyFunction(ThirdPartyClassifyFunctionArgs),
@@ -697,6 +708,14 @@ pub struct ThirdPartyAddArgs {
     pub evidence: Option<String>,
     #[arg(long)]
     pub upstream_url: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct ThirdPartyNoneArgs {
+    #[arg(long)]
+    pub target: Option<String>,
+    #[arg(long)]
+    pub evidence: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -736,9 +755,135 @@ pub struct ThirdPartyVendorPristineArgs {
     /// Path to the pristine upstream source tree
     #[arg(long)]
     pub source_path: std::path::PathBuf,
-    /// Commit the vendored source to git
+    /// Deprecated compatibility flag; ignored because the CLI never commits
     #[arg(long)]
     pub commit: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Container: runtime -> { record, validate }
+// ---------------------------------------------------------------------------
+#[derive(Subcommand, Debug)]
+pub enum RuntimeCmd {
+    Record(RuntimeRecordArgs),
+    Validate(RuntimeValidateArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct RuntimeRecordArgs {
+    #[arg(long)]
+    pub target: Option<String>,
+    #[arg(long)]
+    pub key: String,
+    #[arg(long)]
+    pub value: String,
+    #[arg(long)]
+    pub note: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct RuntimeValidateArgs {
+    #[arg(long)]
+    pub target: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Container: hotpath -> { add, validate }
+// ---------------------------------------------------------------------------
+#[derive(Subcommand, Debug)]
+pub enum HotpathCmd {
+    Add(HotpathAddArgs),
+    Validate(HotpathValidateArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct HotpathAddArgs {
+    #[arg(long)]
+    pub target: Option<String>,
+    #[arg(long)]
+    pub addr: String,
+    #[arg(long)]
+    pub reason: String,
+    #[arg(long)]
+    pub weight: Option<u64>,
+}
+
+#[derive(Args, Debug)]
+pub struct HotpathValidateArgs {
+    #[arg(long)]
+    pub target: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Container: metadata -> { enrich-function, validate }
+// ---------------------------------------------------------------------------
+#[derive(Subcommand, Debug)]
+pub enum MetadataCmd {
+    EnrichFunction(MetadataEnrichFunctionArgs),
+    Validate(MetadataValidateArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct MetadataEnrichFunctionArgs {
+    #[arg(long)]
+    pub target: Option<String>,
+    #[arg(long)]
+    pub addr: String,
+    #[arg(long)]
+    pub name: Option<String>,
+    #[arg(long)]
+    pub prototype: Option<String>,
+    #[arg(long)]
+    pub note: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct MetadataValidateArgs {
+    #[arg(long)]
+    pub target: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Container: substitute -> { add, validate }
+// ---------------------------------------------------------------------------
+#[derive(Subcommand, Debug)]
+pub enum SubstituteCmd {
+    Add(SubstituteAddArgs),
+    Validate(SubstituteValidateArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct SubstituteAddArgs {
+    #[arg(long)]
+    pub target: Option<String>,
+    #[arg(long)]
+    pub fn_id: String,
+    #[arg(long)]
+    pub addr: String,
+    #[arg(long)]
+    pub replacement: String,
+    #[arg(long)]
+    pub note: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SubstituteValidateArgs {
+    #[arg(long)]
+    pub target: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Container: git-check -> { validate }
+// ---------------------------------------------------------------------------
+#[derive(Subcommand, Debug)]
+pub enum GitCheckCmd {
+    Validate(GitCheckValidateArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct GitCheckValidateArgs {
+    #[arg(long)]
+    pub target: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1289,6 +1434,11 @@ COMMANDS
     strings           String baseline management
     imports           Import baseline management
     third-party       Third-party library management
+    runtime           P1 runtime manifest and run records
+    hotpath           P1 hotpath call-chain records
+    metadata          P3 metadata enrichment records
+    substitute        P4 function substitution records
+    git-check         Validate artifact git tracking/staging
     execution-log     Execution log management
     progress          Decompilation progress tracking
     gate              Pipeline gate checks
@@ -2500,6 +2650,7 @@ fn exec_third_party_add(cli: &Cli, args: &ThirdPartyAddArgs, fmt: Format) -> Res
         Ok(t) => t,
         Err(_) => third_party::ThirdPartyYaml {
             target: target.clone(),
+            review_note: None,
             libraries: vec![],
         },
     };
@@ -2513,10 +2664,33 @@ fn exec_third_party_add(cli: &Cli, args: &ThirdPartyAddArgs, fmt: Format) -> Res
         evidence: args.evidence.clone(),
         upstream_url: args.upstream_url.clone(),
         vendored_path: None,
+        pristine_path: None,
+        source_path: None,
         function_classifications: vec![],
     });
     third_party::save_third_party(&ws, &target, &tp)?;
     let out = ok_output(&format!("third-party library '{}' added", args.library));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(EXIT_SUCCESS)
+}
+
+fn exec_third_party_none(cli: &Cli, args: &ThirdPartyNoneArgs, fmt: Format) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+    if let Ok(existing) = third_party::load_third_party(&ws, &target)
+        && !existing.libraries.is_empty()
+    {
+        return Err(anyhow!(
+            "third-party libraries already recorded; remove or review them before recording none"
+        ));
+    }
+    let tp = third_party::ThirdPartyYaml {
+        target: target.clone(),
+        review_note: args.evidence.clone(),
+        libraries: vec![],
+    };
+    third_party::save_third_party(&ws, &target, &tp)?;
+    let out = ok_output("third-party review recorded with no libraries");
     serialize_value(&mut std::io::stdout(), &out, fmt)?;
     Ok(EXIT_SUCCESS)
 }
@@ -2602,6 +2776,553 @@ fn exec_third_party_vendor_pristine(
     ));
     serialize_value(&mut std::io::stdout(), &out, fmt)?;
     Ok(EXIT_SUCCESS)
+}
+
+// ===========================================================================
+// Dispatch: P0-P4 restructure artifact groups
+// ===========================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RuntimeManifestYaml {
+    target: String,
+    observations: Vec<RuntimeObservation>,
+    run_records: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RuntimeObservation {
+    key: String,
+    value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RuntimeRunRecordYaml {
+    target: String,
+    run_id: String,
+    status: String,
+    observations: Vec<RuntimeObservation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HotpathYaml {
+    target: String,
+    functions: Vec<HotpathEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HotpathEntry {
+    addr: String,
+    reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    weight: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MetadataRenamesYaml {
+    target: String,
+    renames: Vec<MetadataRename>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MetadataRename {
+    addr: String,
+    name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MetadataSignaturesYaml {
+    target: String,
+    signatures: Vec<MetadataSignature>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MetadataSignature {
+    addr: String,
+    prototype: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MetadataApplyRecordYaml {
+    target: String,
+    addr: String,
+    applied: bool,
+    note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SubstitutionRecordYaml {
+    target: String,
+    fn_id: String,
+    addr: String,
+    replacement: String,
+    fixtures: Vec<SubstitutionFixture>,
+    status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SubstitutionFixture {
+    fixture_id: String,
+    source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SubstitutionNextBatchYaml {
+    target: String,
+    functions: Vec<SubstitutionBatchEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SubstitutionBatchEntry {
+    fn_id: String,
+    addr: String,
+    status: String,
+}
+
+fn load_or_default<T>(path: &Path, default: T) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    if path.exists() {
+        schema::load_yaml(path)
+    } else {
+        Ok(default)
+    }
+}
+
+fn validate_artifact_sequence(
+    cli: &Cli,
+    target_arg: Option<&String>,
+    fmt: Format,
+    path_parts: &[&str],
+    field: &str,
+    label: &str,
+) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(target_arg, cli.target.as_ref())?;
+    let path = path_parts
+        .iter()
+        .fold(workspace::artifact_dir(&ws, &target), |p, part| {
+            p.join(part)
+        });
+    let content = std::fs::read_to_string(&path)
+        .map_err(|_| anyhow!("{} not found at {}", label, path.display()))?;
+    let doc: serde_yaml::Value = serde_yaml::from_str(&content)
+        .map_err(|err| anyhow!("{} is not valid YAML: {}", label, err))?;
+    let count = doc
+        .get(field)
+        .and_then(|v| v.as_sequence())
+        .map(|seq| seq.len())
+        .unwrap_or(0);
+    if count == 0 {
+        return Err(anyhow!("{} has no entries in '{}'", label, field));
+    }
+    let out = ok_output(&format!("{} valid with {} entries", label, count));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(EXIT_SUCCESS)
+}
+
+fn safe_yaml_stem(raw: &str) -> String {
+    let stem: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if stem.is_empty() {
+        "record".into()
+    } else {
+        stem
+    }
+}
+
+fn validate_safe_id(label: &str, raw: &str) -> Result<()> {
+    if raw.is_empty() || safe_yaml_stem(raw) != raw {
+        return Err(anyhow!(
+            "{} must contain only ASCII letters, numbers, '-' or '_'",
+            label
+        ));
+    }
+    Ok(())
+}
+
+fn validate_safe_relative_yaml_path(label: &str, raw: &str) -> Result<()> {
+    let path = Path::new(raw);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(anyhow!("{} must be a safe relative path", label));
+    }
+    if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
+        return Err(anyhow!("{} must point to a .yaml file", label));
+    }
+    Ok(())
+}
+
+fn exec_runtime_record(cli: &Cli, args: &RuntimeRecordArgs, fmt: Format) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+    let manifest_path = workspace::artifact_dir(&ws, &target)
+        .join("runtime")
+        .join("run-manifest.yaml");
+    let run_id = safe_yaml_stem(&args.key);
+    let record_rel = format!("run-records/{run_id}.yaml");
+    let mut data = load_or_default(
+        &manifest_path,
+        RuntimeManifestYaml {
+            target: target.clone(),
+            observations: vec![],
+            run_records: vec![],
+        },
+    )?;
+    let observation = RuntimeObservation {
+        key: args.key.clone(),
+        value: args.value.clone(),
+        note: args.note.clone(),
+    };
+    data.observations.push(observation.clone());
+    if !data.run_records.iter().any(|r| r == &record_rel) {
+        data.run_records.push(record_rel.clone());
+    }
+    schema::save_yaml(&manifest_path, &data)?;
+
+    let record_path = workspace::artifact_dir(&ws, &target)
+        .join("runtime")
+        .join(&record_rel);
+    let record = RuntimeRunRecordYaml {
+        target,
+        run_id,
+        status: "recorded".into(),
+        observations: vec![observation],
+    };
+    schema::save_yaml(&record_path, &record)?;
+    let out = ok_output(&format!("runtime observation '{}' recorded", args.key));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(EXIT_SUCCESS)
+}
+
+fn exec_runtime_validate(cli: &Cli, args: &RuntimeValidateArgs, fmt: Format) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+    let runtime_dir = workspace::artifact_dir(&ws, &target).join("runtime");
+    let manifest_path = runtime_dir.join("run-manifest.yaml");
+    let manifest: RuntimeManifestYaml = schema::load_yaml(&manifest_path)?;
+    if manifest.observations.is_empty() {
+        return Err(anyhow!("runtime/run-manifest.yaml has no observations"));
+    }
+    if manifest.run_records.is_empty() {
+        return Err(anyhow!("runtime/run-manifest.yaml has no run_records"));
+    }
+
+    for record_rel in &manifest.run_records {
+        validate_safe_relative_yaml_path("runtime run record path", record_rel)?;
+        let record_path = runtime_dir.join(record_rel);
+        let record: RuntimeRunRecordYaml = schema::load_yaml(&record_path)?;
+        if record.observations.is_empty() {
+            return Err(anyhow!("{} has no observations", record_path.display()));
+        }
+    }
+
+    let out = ok_output(&format!(
+        "runtime valid with {} observations and {} run records",
+        manifest.observations.len(),
+        manifest.run_records.len()
+    ));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(EXIT_SUCCESS)
+}
+
+fn exec_hotpath_add(cli: &Cli, args: &HotpathAddArgs, fmt: Format) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+    let path = workspace::artifact_dir(&ws, &target)
+        .join("runtime")
+        .join("hotpaths")
+        .join("call-chain.yaml");
+    let mut data = load_or_default(
+        &path,
+        HotpathYaml {
+            target: target.clone(),
+            functions: vec![],
+        },
+    )?;
+    data.functions.push(HotpathEntry {
+        addr: args.addr.clone(),
+        reason: args.reason.clone(),
+        weight: args.weight,
+    });
+    schema::save_yaml(&path, &data)?;
+    let out = ok_output(&format!("hotpath added at {}", args.addr));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(EXIT_SUCCESS)
+}
+
+fn exec_hotpath_validate(cli: &Cli, args: &HotpathValidateArgs, fmt: Format) -> Result<i32> {
+    validate_artifact_sequence(
+        cli,
+        args.target.as_ref(),
+        fmt,
+        &["runtime", "hotpaths", "call-chain.yaml"],
+        "functions",
+        "runtime/hotpaths/call-chain.yaml",
+    )
+}
+
+fn exec_metadata_enrich_function(
+    cli: &Cli,
+    args: &MetadataEnrichFunctionArgs,
+    fmt: Format,
+) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+    let name = args
+        .name
+        .as_ref()
+        .ok_or_else(|| anyhow!("metadata enrichment requires --name"))?;
+    let prototype = args
+        .prototype
+        .as_ref()
+        .ok_or_else(|| anyhow!("metadata enrichment requires --prototype"))?;
+
+    let renames_path = workspace::artifact_dir(&ws, &target)
+        .join("metadata")
+        .join("renames.yaml");
+    let mut renames = load_or_default(
+        &renames_path,
+        MetadataRenamesYaml {
+            target: target.clone(),
+            renames: vec![],
+        },
+    )?;
+    renames.renames.push(MetadataRename {
+        addr: args.addr.clone(),
+        name: name.clone(),
+        note: args.note.clone(),
+    });
+    schema::save_yaml(&renames_path, &renames)?;
+
+    let signatures_path = workspace::artifact_dir(&ws, &target)
+        .join("metadata")
+        .join("signatures.yaml");
+    let mut signatures = load_or_default(
+        &signatures_path,
+        MetadataSignaturesYaml {
+            target: target.clone(),
+            signatures: vec![],
+        },
+    )?;
+    signatures.signatures.push(MetadataSignature {
+        addr: args.addr.clone(),
+        prototype: prototype.clone(),
+        note: args.note.clone(),
+    });
+    schema::save_yaml(&signatures_path, &signatures)?;
+
+    let apply_record = MetadataApplyRecordYaml {
+        target,
+        addr: args.addr.clone(),
+        applied: false,
+        note: args.note.clone(),
+    };
+    schema::save_yaml(
+        &workspace::artifact_dir(&ws, apply_record.target.as_str())
+            .join("metadata")
+            .join("apply-records")
+            .join(format!("{}.yaml", safe_yaml_stem(&args.addr))),
+        &apply_record,
+    )?;
+    let out = ok_output(&format!("metadata enrichment recorded for {}", args.addr));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(EXIT_SUCCESS)
+}
+
+fn exec_metadata_validate(cli: &Cli, args: &MetadataValidateArgs, fmt: Format) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+    let ad = workspace::artifact_dir(&ws, &target);
+    let renames: MetadataRenamesYaml =
+        schema::load_yaml(&ad.join("metadata").join("renames.yaml"))?;
+    let signatures: MetadataSignaturesYaml =
+        schema::load_yaml(&ad.join("metadata").join("signatures.yaml"))?;
+    if renames.renames.is_empty() || signatures.signatures.is_empty() {
+        return Err(anyhow!(
+            "metadata renames and signatures must both be non-empty"
+        ));
+    }
+    let out = ok_output(&format!(
+        "metadata valid with {} renames and {} signatures",
+        renames.renames.len(),
+        signatures.signatures.len()
+    ));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(EXIT_SUCCESS)
+}
+
+fn exec_substitute_add(cli: &Cli, args: &SubstituteAddArgs, fmt: Format) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+    validate_safe_id("fn-id", &args.fn_id)?;
+    let fn_dir = workspace::artifact_dir(&ws, &target)
+        .join("substitution")
+        .join("functions")
+        .join(&args.fn_id);
+    let record = SubstitutionRecordYaml {
+        target: target.clone(),
+        fn_id: args.fn_id.clone(),
+        addr: args.addr.clone(),
+        replacement: args.replacement.clone(),
+        fixtures: vec![SubstitutionFixture {
+            fixture_id: "fixture_001".into(),
+            source: "cli-placeholder".into(),
+        }],
+        status: "recorded".into(),
+        note: args.note.clone(),
+    };
+    schema::save_yaml(&fn_dir.join("substitution.yaml"), &record)?;
+    schema::save_yaml(
+        &fn_dir.join("capture.yaml"),
+        &serde_json::json!({
+            "target": target,
+            "fn_id": args.fn_id.clone(),
+            "addr": args.addr.clone(),
+            "fixtures": record.fixtures.clone(),
+            "status": "recorded"
+        }),
+    )?;
+
+    let next_batch_path = workspace::artifact_dir(&ws, &record.target)
+        .join("substitution")
+        .join("next-batch.yaml");
+    let mut next_batch = load_or_default(
+        &next_batch_path,
+        SubstitutionNextBatchYaml {
+            target: record.target.clone(),
+            functions: vec![],
+        },
+    )?;
+    next_batch.functions.push(SubstitutionBatchEntry {
+        fn_id: record.fn_id.clone(),
+        addr: record.addr.clone(),
+        status: "recorded".into(),
+    });
+    schema::save_yaml(&next_batch_path, &next_batch)?;
+
+    let out = ok_output(&format!("substitution recorded for {}", args.fn_id));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(EXIT_SUCCESS)
+}
+
+fn exec_substitute_validate(cli: &Cli, args: &SubstituteValidateArgs, fmt: Format) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+    let functions_dir = workspace::artifact_dir(&ws, &target)
+        .join("substitution")
+        .join("functions");
+    let mut count = 0usize;
+    if functions_dir.exists() {
+        for entry in std::fs::read_dir(&functions_dir)? {
+            let entry = entry?;
+            let path = entry.path().join("substitution.yaml");
+            if path.exists() {
+                let record: SubstitutionRecordYaml = schema::load_yaml(&path)?;
+                if record.fixtures.is_empty() {
+                    return Err(anyhow!("{} has no fixtures", path.display()));
+                }
+                count += 1;
+            }
+        }
+    }
+    if count == 0 {
+        return Err(anyhow!(
+            "no substitution/function records found for target '{}'",
+            target
+        ));
+    }
+    let out = ok_output(&format!("substitution valid with {} functions", count));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(EXIT_SUCCESS)
+}
+
+fn git_artifact_statuses(workspace: &Path, target: &str) -> Result<Vec<BTreeMap<String, String>>> {
+    let repo = match git2::Repository::discover(workspace) {
+        Ok(repo) => repo,
+        Err(_) => return Ok(vec![]),
+    };
+    let workdir = repo
+        .workdir()
+        .ok_or_else(|| anyhow!("git repository has no workdir"))?;
+    let workdir = std::fs::canonicalize(workdir)?;
+    let artifact_root = workspace::artifact_dir(workspace, target);
+    let mut rows = Vec::new();
+    if !artifact_root.exists() {
+        return Ok(rows);
+    }
+    let mut stack = vec![artifact_root];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
+                let canonical_path = std::fs::canonicalize(&path).unwrap_or(path.clone());
+                let rel = canonical_path.strip_prefix(&workdir).unwrap_or(&path);
+                let status = repo.status_file(rel).unwrap_or(git2::Status::WT_NEW);
+                let tracked_or_staged = status.is_empty()
+                    || status.intersects(
+                        git2::Status::INDEX_NEW
+                            | git2::Status::INDEX_MODIFIED
+                            | git2::Status::INDEX_RENAMED
+                            | git2::Status::INDEX_TYPECHANGE,
+                    );
+                let mut row = BTreeMap::new();
+                row.insert("path".into(), rel.to_string_lossy().to_string());
+                row.insert("status".into(), format!("{:?}", status));
+                row.insert("tracked_or_staged".into(), tracked_or_staged.to_string());
+                rows.push(row);
+            }
+        }
+    }
+    rows.sort_by(|a, b| a.get("path").cmp(&b.get("path")));
+    Ok(rows)
+}
+
+fn exec_git_check_validate(cli: &Cli, args: &GitCheckValidateArgs, fmt: Format) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+    let statuses = git_artifact_statuses(&ws, &target)?;
+    let passed = statuses.iter().all(|row| {
+        row.get("tracked_or_staged")
+            .map(|v| v == "true")
+            .unwrap_or(false)
+    });
+    let mut report = serde_yaml::Mapping::new();
+    report.insert("target".into(), target.clone().into());
+    report.insert("passed".into(), passed.into());
+    report.insert("files".into(), serde_yaml::to_value(&statuses)?);
+    let out = ok_output_with_data(
+        if passed {
+            "git-check validation passed"
+        } else {
+            "git-check validation failed"
+        },
+        serde_yaml::Value::Mapping(report),
+    );
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(if passed { EXIT_SUCCESS } else { EXIT_FAILURE })
 }
 
 // ===========================================================================
@@ -2728,9 +3449,7 @@ fn exec_gate_check(cli: &Cli, args: &GateCheckArgs, fmt: Format) -> Result<i32> 
     let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
 
     let phases: Vec<&str> = match args.phase {
-        Some(ref p) if p.as_str() == "all" => {
-            vec!["P0", "P0.5", "P1", "P2", "P3", "P4", "P5", "P6"]
-        }
+        Some(ref p) if p.as_str() == "all" => vec!["P0", "P1", "P2", "P3", "P4"],
         Some(ref p) => vec![p.as_str()],
         None => vec!["P1"], // default phase
     };
@@ -3970,6 +4689,13 @@ fn dispatch(cli: &Cli, command: &Commands, fmt: Format) -> Result<i32> {
                 exec_third_party_add(cli, args, fmt)
             })
         }
+        Commands::ThirdParty(ThirdPartyCmd::None(args)) => {
+            let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+            let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+            with_lock(&ws, Some(&target), "third_party", || {
+                exec_third_party_none(cli, args, fmt)
+            })
+        }
         Commands::ThirdParty(ThirdPartyCmd::SetVersion(args)) => {
             let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
             let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
@@ -3992,6 +4718,43 @@ fn dispatch(cli: &Cli, command: &Commands, fmt: Format) -> Result<i32> {
                 exec_third_party_vendor_pristine(cli, args, fmt)
             })
         }
+
+        // P0-P4 restructure artifact groups
+        Commands::Runtime(RuntimeCmd::Record(args)) => {
+            let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+            let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+            with_lock(&ws, Some(&target), "runtime", || {
+                exec_runtime_record(cli, args, fmt)
+            })
+        }
+        Commands::Runtime(RuntimeCmd::Validate(args)) => exec_runtime_validate(cli, args, fmt),
+        Commands::Hotpath(HotpathCmd::Add(args)) => {
+            let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+            let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+            with_lock(&ws, Some(&target), "hotpath", || {
+                exec_hotpath_add(cli, args, fmt)
+            })
+        }
+        Commands::Hotpath(HotpathCmd::Validate(args)) => exec_hotpath_validate(cli, args, fmt),
+        Commands::Metadata(MetadataCmd::EnrichFunction(args)) => {
+            let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+            let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+            with_lock(&ws, Some(&target), "metadata", || {
+                exec_metadata_enrich_function(cli, args, fmt)
+            })
+        }
+        Commands::Metadata(MetadataCmd::Validate(args)) => exec_metadata_validate(cli, args, fmt),
+        Commands::Substitute(SubstituteCmd::Add(args)) => {
+            let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+            let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+            with_lock(&ws, Some(&target), "substitute", || {
+                exec_substitute_add(cli, args, fmt)
+            })
+        }
+        Commands::Substitute(SubstituteCmd::Validate(args)) => {
+            exec_substitute_validate(cli, args, fmt)
+        }
+        Commands::GitCheck(GitCheckCmd::Validate(args)) => exec_git_check_validate(cli, args, fmt),
 
         // execution-log
         Commands::ExecutionLog(ExecutionLogCmd::Append(args)) => {

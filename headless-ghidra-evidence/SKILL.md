@@ -1,14 +1,15 @@
 ---
 name: "headless-ghidra-evidence"
-description: "P2 sub-skill: review baseline YAML metadata, identify third-party code, and synthesize frontier evidence into YAML outputs."
+description: "P2 sub-skill: identify third-party code, record pristine sources, and synthesize frontier evidence into YAML outputs."
 phase: "P2"
 ---
 
-# Headless Ghidra Evidence — P2
+# Headless Ghidra Third-Party — P2
 
-P2 reviews the baseline YAML exports and records the current frontier evidence
-needed by discovery. It may also identify third-party libraries and attach
-optional Frida observations when static evidence is insufficient.
+P2 reviews baseline and runtime YAML to identify third-party libraries, record
+local pristine source directories, and classify functions for later metadata
+enrichment. Source download or acquisition is outside the CLI; the CLI records
+`source_path`, `pristine_path`, version, confidence, and evidence.
 
 ## Required ghidra-agent-cli Commands
 
@@ -23,17 +24,13 @@ optional Frida observations when static evidence is insufficient.
 - `ghidra-agent-cli callgraph callers`
 - `ghidra-agent-cli callgraph callees`
 - `ghidra-agent-cli third-party add`
+- `ghidra-agent-cli third-party none`
 - `ghidra-agent-cli third-party set-version`
 - `ghidra-agent-cli third-party list`
 - `ghidra-agent-cli third-party classify-function`
 - `ghidra-agent-cli third-party vendor-pristine`
 - `ghidra-agent-cli execution-log append`
 - `ghidra-agent-cli gate check --phase P2`
-
-Optional runtime supplementation may also use:
-
-- `ghidra-agent-cli frida device-list`
-- `ghidra-agent-cli frida device-attach`
 
 ## Inputs
 
@@ -44,27 +41,38 @@ Optional runtime supplementation may also use:
 - `artifacts/<target-id>/baseline/vtables.yaml`
 - `artifacts/<target-id>/baseline/strings.yaml`
 - `artifacts/<target-id>/baseline/imports.yaml`
+- `artifacts/<target-id>/runtime/run-manifest.yaml`
+- `artifacts/<target-id>/runtime/hotpaths/call-chain.yaml`
 - Existing `artifacts/<target-id>/third-party/identified.yaml` if present
 
 ## Outputs
 
-- `artifacts/<target-id>/evidence-candidates.yaml`
 - `artifacts/<target-id>/third-party/identified.yaml`
-- Optional phase-owned runtime supplement YAML under `artifacts/<target-id>/evidence/`
+- `artifacts/<target-id>/third-party/pristine/<library>@<version>/`
+- Optional compatibility changes under
+  `artifacts/<target-id>/third-party/compat/<library>@<version>/`
 
 ## Exit Expectations
 
-- Evidence review exists as `evidence-candidates.yaml`.
-- Third-party matches and classifications are recorded in YAML, not Markdown.
-- The next phase has enough evidence to choose the next frontier candidate or
-  batch.
+- `identified.yaml` records at least one medium-or-higher confidence library
+  when third-party code is present.
+- `identified.yaml` records `libraries: []` when review finds no third-party
+  code.
+- Each recorded third-party library has a local `source_path` and a pristine
+  directory under `third-party/pristine/`.
+- Pristine source directories are kept unmodified; compatibility edits live
+  under `third-party/compat/`.
+- The next phase has enough version and function-classification evidence to
+  recover names, signatures, and types.
 
 ## Constraints
 
 - Do not mutate baseline YAML exports directly.
 - Do not claim unsupported evidence without recording the supporting source.
 - Do not bypass `ghidra-agent-cli` for supported baseline reads, third-party
-  writes, execution logging, or supported Frida setup.
+  writes, or execution logging.
+- Do not create or run a new Ghidra script if the CLI lacks a capability; pause
+  and ask the user first.
 
 ## Next Step
 

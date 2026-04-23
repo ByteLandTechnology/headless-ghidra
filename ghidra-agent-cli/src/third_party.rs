@@ -16,6 +16,10 @@ pub struct ThirdPartyLib {
     pub upstream_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vendored_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pristine_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
     #[serde(default)]
     pub function_classifications: Vec<FunctionClassification>,
 }
@@ -31,6 +35,8 @@ pub struct FunctionClassification {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThirdPartyYaml {
     pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_note: Option<String>,
     pub libraries: Vec<ThirdPartyLib>,
 }
 
@@ -51,15 +57,16 @@ pub fn save_third_party(workspace: &Path, target: &str, data: &ThirdPartyYaml) -
     )
 }
 
-/// Vendors a pristine source tree for a third-party library.
-/// Copies the source to artifacts/<target>/third-party/sources/<lib>@<ver>/,
-/// optionally commits to git, and updates identified.yaml with vendored_path.
+/// Records a pristine source tree for a third-party library.
+/// Copies the source to artifacts/<target>/third-party/pristine/<lib>@<ver>/,
+/// and updates identified.yaml with pristine_path and source_path. The commit
+/// argument is accepted for legacy CLI compatibility but is intentionally ignored.
 pub fn vendor_pristine(
     workspace: &Path,
     target: &str,
     library: &str,
     source_path: &Path,
-    commit: bool,
+    _commit: bool,
 ) -> Result<PathBuf> {
     let mut tp = load_third_party(workspace, target)?;
     let lib = tp
@@ -68,57 +75,55 @@ pub fn vendor_pristine(
         .find(|l| l.library == library)
         .ok_or_else(|| anyhow::anyhow!("third-party library '{}' not found", library))?;
 
-    let vendored_dir = artifact_dir(workspace, target)
+    let pristine_name = format!(
+        "{}@{}",
+        safe_dir_component(&lib.library)?,
+        safe_dir_component(&lib.version)?
+    );
+    let pristine_dir = artifact_dir(workspace, target)
         .join("third-party")
-        .join("sources")
-        .join(format!("{}@{}", lib.library, lib.version));
+        .join("pristine")
+        .join(pristine_name);
 
     // Copy source tree
-    if vendored_dir.exists() {
-        std::fs::remove_dir_all(&vendored_dir).with_context(|| {
-            format!("failed to remove existing vendored dir {:?}", vendored_dir)
+    if pristine_dir.exists() {
+        std::fs::remove_dir_all(&pristine_dir).with_context(|| {
+            format!("failed to remove existing pristine dir {:?}", pristine_dir)
         })?;
     }
-    copy_dir_recursive(source_path, &vendored_dir).with_context(|| {
+    copy_dir_recursive(source_path, &pristine_dir).with_context(|| {
         format!(
             "failed to copy source from {:?} to {:?}",
-            source_path, vendored_dir
+            source_path, pristine_dir
         )
     })?;
 
-    // Optionally commit
-    if commit {
-        let repo = git2::Repository::discover(workspace)
-            .with_context(|| "failed to discover git repository")?;
-        let mut index = repo.index()?;
-        let workdir = repo.workdir().with_context(|| "failed to get workdir")?;
-        add_dir_to_index(&mut index, &vendored_dir, workdir)?;
-        index.write()?;
-        let tree_id = index.write_tree()?;
-        let tree = repo.find_tree(tree_id)?;
-        let sig = git2::Signature::now("ghidra-agent-cli", "ghidra-agent-cli@local")
-            .with_context(|| "failed to create git signature")?;
-        repo.commit(
-            Some("HEAD"),
-            &sig,
-            &sig,
-            &format!(
-                "vendor: add pristine source for {}@{}\n\nVendored from {:?}",
-                lib.library, lib.version, source_path
-            ),
-            &tree,
-            &[&repo.head()?.peel_to_commit()?],
-        )?;
-    }
-
-    // Update identified.yaml with vendored_path
-    let rel_path = vendored_dir
+    let rel_path = pristine_dir
         .strip_prefix(artifact_dir(workspace, target))
-        .unwrap_or(&vendored_dir);
-    lib.vendored_path = Some(rel_path.to_string_lossy().to_string());
+        .unwrap_or(&pristine_dir);
+    lib.vendored_path = None;
+    lib.pristine_path = Some(rel_path.to_string_lossy().to_string());
+    lib.source_path = Some(source_path.display().to_string());
     save_third_party(workspace, target, &tp)?;
 
-    Ok(vendored_dir)
+    Ok(pristine_dir)
+}
+
+fn safe_dir_component(raw: &str) -> Result<String> {
+    let component: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if component.is_empty() || component == "." || component == ".." {
+        anyhow::bail!("invalid artifact path component '{}'", raw);
+    }
+    Ok(component)
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
@@ -132,21 +137,6 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
             std::fs::copy(&src_path, &dst_path)?;
-        }
-    }
-    Ok(())
-}
-
-fn add_dir_to_index(index: &mut git2::Index, dir: &Path, repo_workdir: &Path) -> Result<()> {
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if entry.file_type()?.is_dir() {
-            add_dir_to_index(index, &path, repo_workdir)?;
-        } else {
-            // git2::Index::add_path requires paths relative to the repository root (workdir)
-            let relative = path.strip_prefix(repo_workdir).unwrap_or(&path);
-            index.add_path(relative)?;
         }
     }
     Ok(())

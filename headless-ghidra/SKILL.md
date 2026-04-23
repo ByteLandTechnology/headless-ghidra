@@ -1,11 +1,11 @@
 ---
 name: "headless-ghidra"
-description: "Global orchestrator for the headless Ghidra YAML-first decompilation pipeline. Reads artifacts/<target>/pipeline-state.yaml, dispatches P0–P6 phase skills, executes programmatic gate checks, and manages user interaction. Performs zero analysis work itself."
+description: "Global orchestrator for the headless Ghidra YAML-first decompilation pipeline. Reads artifacts/<target>/pipeline-state.yaml, dispatches P0–P4 phase skills, executes programmatic gate checks, and manages user interaction. Performs zero analysis work itself."
 ---
 
 # Headless Ghidra — Global Orchestrator
 
-This skill is the workflow authority for the repository. It defines the P0–P6
+This skill is the workflow authority for the repository. It defines the P0–P4
 sequence, dispatch rules, and artifact hand-off points. `ghidra-agent-cli`
 remains the tool authority for command syntax and YAML artifact semantics.
 
@@ -17,22 +17,32 @@ remains the tool authority for command syntax and YAML artifact semantics.
 - Lower-level shell scripts and Java helpers are backend details. They must not
   replace the CLI as the primary interface when the CLI already supports the
   action.
+- All workflow artifacts must live under `artifacts/<target-id>/`.
+- YAML artifacts must be created, updated, and validated by `ghidra-agent-cli`.
+- The CLI must not automatically create git commits.
+- Gate transitions require relevant artifacts to be tracked or staged in git.
+- All Ghidra project operations must go through `ghidra-agent-cli`. If the CLI
+  lacks a required capability, pause and ask the user before creating or running
+  a new Ghidra script.
 
 ## Pipeline
 
 ```text
-P0 Intake → P0.5 Scope → P1 Baseline → P2 Evidence → [P3 Discovery → P4+P5 Decompile → P6 Verify]*
+P0 Intake → P1 Baseline+Runtime → P2 Third-Party → [P3 Metadata Enrichment → P4 Function Substitution]*
 ```
 
 | Phase | Skill | Purpose | Primary outputs |
 |---|---|---|---|
-| P0 | [`headless-ghidra-intake`](../headless-ghidra-intake/SKILL.md) | Initialize target workspace and discover runtime prerequisites | `pipeline-state.yaml`, `scope.yaml`, `targets/<id>/ghidra-projects/` |
-| P0.5 | [`headless-ghidra-scope`](../headless-ghidra-scope/SKILL.md) | Define analysis scope (functions, addresses, symbols) | Updated `scope.yaml` with non-empty entries |
-| P1 | [`headless-ghidra-baseline`](../headless-ghidra-baseline/SKILL.md) | Export baseline YAML metadata from Ghidra | `baseline/*.yaml` |
-| P2 | [`headless-ghidra-evidence`](../headless-ghidra-evidence/SKILL.md) | Review baseline evidence and third-party signals | `evidence-candidates.yaml`, `third-party/identified.yaml` |
-| P3 | [`headless-ghidra-discovery`](../headless-ghidra-discovery/SKILL.md) | Select the next frontier batch | `target-selection.yaml`, refreshed `next-batch.yaml` |
-| P4+P5 | [`headless-ghidra-batch-decompile`](../headless-ghidra-batch-decompile/SKILL.md) | Apply metadata, decompile, and record per-function outputs | `decompilation/functions/<fn_id>/decompilation-record.yaml` |
-| P6 | [`headless-ghidra-frida-verify`](../headless-ghidra-frida-verify/SKILL.md) | Record and compare runtime behavior | `decompilation/functions/<fn_id>/verification-result.yaml` |
+| P0 | [`headless-ghidra-intake`](../headless-ghidra-intake/SKILL.md) | Initialize target workspace, discover prerequisites, and define scope | `pipeline-state.yaml`, `scope.yaml`, `targets/<id>/ghidra-projects/` |
+| P1 | [`headless-ghidra-baseline`](../headless-ghidra-baseline/SKILL.md) | Run Ghidra import/analysis, export baseline YAML, and prepare runtime observations | `baseline/*.yaml`, `runtime/run-manifest.yaml`, `runtime/run-records/*.yaml`, `runtime/hotpaths/call-chain.yaml` |
+| P2 | [`headless-ghidra-evidence`](../headless-ghidra-evidence/SKILL.md) | Identify and record third-party libraries and pristine sources | `third-party/identified.yaml`, `third-party/pristine/<library>@<version>/`, `third-party/compat/<library>@<version>/` |
+| P3 | [`headless-ghidra-discovery`](../headless-ghidra-discovery/SKILL.md) | Enrich names, signatures, types, constants, strings, and selected hotpath metadata | `metadata/*.yaml`, `metadata/apply-records/` |
+| P4 | [`headless-ghidra-batch-decompile`](../headless-ghidra-batch-decompile/SKILL.md) | Substitute selected functions through metadata application and Ghidra decompilation | `substitution/next-batch.yaml`, `substitution/functions/<fn_id>/` |
+
+Deprecated compatibility-only aliases:
+
+- [`headless-ghidra-scope`](../headless-ghidra-scope/SKILL.md) preserves old P0.5 scope wording; scope is now part of P0.
+- [`headless-ghidra-frida-verify`](../headless-ghidra-frida-verify/SKILL.md) preserves old P6 verification wording; runtime observations are now part of P1/P4 hand-offs.
 
 ## Shared Artifact Contract
 
@@ -46,11 +56,25 @@ artifacts/<target-id>/
 ├── scope.yaml
 ├── intake/
 ├── baseline/
+├── runtime/
+│   ├── project/
+│   ├── fixtures/
+│   ├── run-manifest.yaml
+│   ├── run-records/
+│   └── hotpaths/call-chain.yaml
 ├── third-party/
-├── evidence-candidates.yaml
-├── target-selection.yaml
-├── decompilation/
-│   ├── progress.yaml
+│   ├── identified.yaml
+│   ├── pristine/<library>@<version>/
+│   └── compat/<library>@<version>/
+├── metadata/
+│   ├── renames.yaml
+│   ├── signatures.yaml
+│   ├── types.yaml
+│   ├── constants.yaml
+│   ├── strings.yaml
+│   └── apply-records/
+├── substitution/
+│   ├── template/
 │   ├── next-batch.yaml
 │   └── functions/<fn_id>/
 └── gates/
@@ -65,17 +89,16 @@ record and relies on the phase-owned YAML artifacts above for hand-offs.
 2. Read `artifacts/<target-id>/pipeline-state.yaml`.
 3. Dispatch the correct phase skill for the current stage.
 4. Run `ghidra-agent-cli gate check --phase ...` at each transition.
-6. Advance phase state only after the gate passes.
-7. Handle user dialogs such as resume/restart, optional Frida supplementation,
+5. Advance phase state only after the gate passes.
+6. Handle user dialogs such as resume/restart, optional Frida supplementation,
    batch confirmation, divergence review, and completion.
 
 ## Gate Policy
 
-- P0–P4 are normally target-level transitions.
-- P5 and P6 are evaluated per function in the workflow, even when the CLI still
-  exposes aggregate target-level checks for some paths.
+- P0–P4 are the only primary pipeline transitions.
+- P0.5, P5, and P6 gates may exist only as deprecated compatibility aliases.
 - `ghidra-agent-cli gate check` is the authoritative gate validation for all
-  pipeline phases (P0–P6). The legacy `gate-check.sh` has been removed.
+  pipeline phases (P0–P4). The legacy `gate-check.sh` has been removed.
 
 ## Required ghidra-agent-cli Commands
 
@@ -91,19 +114,20 @@ record and relies on the phase-owned YAML artifacts above for hand-offs.
 
 ## Strict Prohibitions
 
-- ⛔ Must not execute analysis work itself.
-- ⛔ Must not edit baseline, evidence, decompilation, or verification artifacts
+- Must not execute analysis work itself.
+- Must not edit baseline, evidence, decompilation, or verification artifacts
   directly except for explicit state updates it owns.
-- ⛔ Must not bypass `ghidra-agent-cli` for supported state, progress, context,
+- Must not bypass `ghidra-agent-cli` for supported state, progress, context,
   validation, or gate operations.
-- ⛔ Must not accept alternate decompilation backends in place of Ghidra.
+- Must not accept alternate decompilation backends in place of Ghidra.
+- Must not create git commits automatically.
+- Must not create or run new Ghidra scripts when the CLI lacks a capability;
+  pause and ask the user first.
 
 ## Next Skill Routing
 
-- P0 complete → `headless-ghidra-scope`
-- P0.5 complete → `headless-ghidra-baseline`
+- P0 complete → `headless-ghidra-baseline`
 - P1 complete → `headless-ghidra-evidence`
 - P2 complete → `headless-ghidra-discovery`
 - P3 complete → `headless-ghidra-batch-decompile`
-- P5 complete for all selected functions → `headless-ghidra-frida-verify`
-- P6 complete for all selected functions → either loop back to P3 or finish
+- P4 complete for all selected functions → either loop back to P3 or finish

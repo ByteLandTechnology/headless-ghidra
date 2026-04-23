@@ -35,7 +35,7 @@ pub fn save_gate_report(workspace: &Path, target: &str, report: &GateReport) -> 
     )
 }
 
-pub const ALL_PHASES: &[&str] = &["P0", "P0.5", "P1", "P2", "P3", "P4", "P5", "P6"];
+pub const ALL_PHASES: &[&str] = &["P0", "P1", "P2", "P3", "P4"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhaseInfo {
@@ -55,41 +55,26 @@ pub fn phase_descriptions() -> Vec<PhaseInfo> {
             )],
         },
         PhaseInfo {
-            phase: "P0.5".into(),
-            name: "Scope".into(),
-            checks: vec![(
-                "P0.5_01".into(),
-                "scope.yaml exists with non-empty entries".into(),
-            )],
-        },
-        PhaseInfo {
             phase: "P1".into(),
-            name: "Baseline".into(),
-            checks: [
-                "functions.yaml",
-                "callgraph.yaml",
-                "types.yaml",
-                "vtables.yaml",
-                "constants.yaml",
-                "strings.yaml",
-                "imports.yaml",
-            ]
-            .iter()
-            .map(|name| {
+            name: "Baseline+Runtime".into(),
+            checks: vec![
                 (
-                    format!("P1_{}", name.replace('.', "_")),
-                    format!("baseline/{name} exists and is parseable"),
-                )
-            })
-            .collect(),
+                    "P1_baseline".into(),
+                    "baseline YAML files exist and are parseable".into(),
+                ),
+                (
+                    "P1_runtime".into(),
+                    "runtime run manifest, run records, and hotpath call-chain exist".into(),
+                ),
+            ],
         },
         PhaseInfo {
             phase: "P2".into(),
-            name: "Evidence".into(),
+            name: "Third-Party".into(),
             checks: vec![
                 (
                     "P2_01".into(),
-                    "evidence-candidates.yaml or target-selection.yaml exists".into(),
+                    "third-party/identified.yaml exists and is parseable".into(),
                 ),
                 (
                     "P2_02".into(),
@@ -103,58 +88,29 @@ pub fn phase_descriptions() -> Vec<PhaseInfo> {
         },
         PhaseInfo {
             phase: "P3".into(),
-            name: "Discovery".into(),
+            name: "Metadata Enrichment".into(),
             checks: vec![
                 (
                     "P3_01".into(),
-                    "target-selection.yaml exists with selected_target".into(),
+                    "metadata renames and signatures exist with entries".into(),
                 ),
                 (
                     "P3_02".into(),
-                    ">= 1 candidate with status ready or selected".into(),
+                    "metadata covers all P1 hotpath functions".into(),
                 ),
-                ("P3_03".into(), "scope: entries non-empty".into()),
             ],
         },
         PhaseInfo {
             phase: "P4".into(),
-            name: "Batch Decompile".into(),
+            name: "Function Substitution".into(),
             checks: vec![
-                ("P4_01".into(), "decompilation/progress.yaml exists".into()),
+                (
+                    "P4_01".into(),
+                    "substitution function records exist with fixtures".into(),
+                ),
                 (
                     "P4_02".into(),
-                    "decompilation/next-batch.yaml exists and non-empty".into(),
-                ),
-                (
-                    "P4_03".into(),
-                    "next-batch entries reference valid scope or baseline addresses".into(),
-                ),
-            ],
-        },
-        PhaseInfo {
-            phase: "P5".into(),
-            name: "Decompile Complete".into(),
-            checks: vec![
-                ("P5_01".into(), ">= 1 decompiled C file exists".into()),
-                ("P5_02".into(), "coverage >= 10%".into()),
-                (
-                    "P5_03".into(),
-                    "each decompiled function has decompilation-record.yaml with required fields"
-                        .into(),
-                ),
-            ],
-        },
-        PhaseInfo {
-            phase: "P6".into(),
-            name: "Verification".into(),
-            checks: vec![
-                (
-                    "P6_01".into(),
-                    "verification-result.yaml exists for each decompiled function".into(),
-                ),
-                (
-                    "P6_02".into(),
-                    "no unresolved mismatches without notes".into(),
+                    "substitutions reference P3 named and typed functions".into(),
                 ),
             ],
         },
@@ -193,15 +149,15 @@ fn validate_yaml_sequence_nonempty(path: &Path, field: &str) -> bool {
 pub fn check_phase(workspace: &Path, target: &str, phase: &str) -> Result<GateReport> {
     let ad = artifact_dir(workspace, target);
 
-    let checks = match phase {
-        "P0" => p0_checks(&ad),
-        "P0.5" => p0_5_checks(&ad),
-        "P1" => p1_checks(&ad),
-        "P2" => p2_checks(&ad),
-        "P3" => p3_checks(&ad),
+    let mut checks = match phase {
+        "P0" => p0_checks(workspace, target, &ad),
+        "P0.5" => legacy_phase_checks("P0.5", "P0.5 is deprecated; use P1 Baseline+Runtime"),
+        "P1" => p1_checks(workspace, target, &ad),
+        "P2" => p2_checks(workspace, target, &ad),
+        "P3" => p3_checks(workspace, target, &ad),
         "P4" => p4_checks(workspace, target, &ad),
-        "P5" => p5_checks(workspace, target, &ad),
-        "P6" => p6_checks(workspace, target, &ad),
+        "P5" => legacy_phase_checks("P5", "P5 is deprecated; use P4 Function Substitution"),
+        "P6" => legacy_phase_checks("P6", "P6 is deprecated; use P4 Function Substitution"),
         _ => vec![GateCheck {
             id: format!("{}_01", phase.replace('.', "_")),
             description: format!("{} gate placeholder", phase),
@@ -209,6 +165,14 @@ pub fn check_phase(workspace: &Path, target: &str, phase: &str) -> Result<GateRe
             detail: None,
         }],
     };
+    if matches!(phase, "P0" | "P1" | "P2" | "P3" | "P4") {
+        checks.push(git_tracking_check(
+            workspace,
+            target,
+            phase,
+            &phase_artifacts(phase),
+        ));
+    }
 
     let passed = checks.iter().all(|c| c.passed);
     Ok(GateReport {
@@ -220,7 +184,190 @@ pub fn check_phase(workspace: &Path, target: &str, phase: &str) -> Result<GateRe
     })
 }
 
-fn p0_checks(ad: &Path) -> Vec<GateCheck> {
+fn legacy_phase_checks(phase: &str, detail: &str) -> Vec<GateCheck> {
+    vec![GateCheck {
+        id: format!("{}_deprecated", phase.replace('.', "_")),
+        description: detail.into(),
+        passed: true,
+        detail: Some("legacy phase accepted for compatibility only".into()),
+    }]
+}
+
+fn phase_artifacts(phase: &str) -> Vec<&'static str> {
+    match phase {
+        "P0" => vec!["pipeline-state.yaml", "scope.yaml"],
+        "P1" => vec![
+            "baseline/functions.yaml",
+            "baseline/callgraph.yaml",
+            "baseline/types.yaml",
+            "baseline/vtables.yaml",
+            "baseline/constants.yaml",
+            "baseline/strings.yaml",
+            "baseline/imports.yaml",
+            "runtime/run-manifest.yaml",
+            "runtime/run-records",
+            "runtime/hotpaths/call-chain.yaml",
+        ],
+        "P2" => vec!["third-party/identified.yaml"],
+        "P3" => vec![
+            "metadata/renames.yaml",
+            "metadata/signatures.yaml",
+            "runtime/hotpaths/call-chain.yaml",
+        ],
+        "P4" => vec!["substitution/next-batch.yaml", "substitution/functions"],
+        _ => vec![],
+    }
+}
+
+fn git_tracking_check(
+    workspace: &Path,
+    target: &str,
+    phase: &str,
+    artifact_rel_paths: &[&str],
+) -> GateCheck {
+    let repo = match git2::Repository::discover(workspace) {
+        Ok(repo) => repo,
+        Err(_) => {
+            return GateCheck {
+                id: format!("{}_git_tracking", phase),
+                description: "phase artifacts are tracked or staged in git".into(),
+                passed: true,
+                detail: Some(
+                    "workspace is not in a git repository; git tracking check skipped".into(),
+                ),
+            };
+        }
+    };
+    let Some(workdir) = repo.workdir() else {
+        return GateCheck {
+            id: format!("{}_git_tracking", phase),
+            description: "phase artifacts are tracked or staged in git".into(),
+            passed: false,
+            detail: Some("git repository has no workdir".into()),
+        };
+    };
+    let workdir = match std::fs::canonicalize(workdir) {
+        Ok(path) => path,
+        Err(err) => {
+            return GateCheck {
+                id: format!("{}_git_tracking", phase),
+                description: "phase artifacts are tracked or staged in git".into(),
+                passed: false,
+                detail: Some(format!("failed to canonicalize git workdir: {err}")),
+            };
+        }
+    };
+
+    let mut failures = Vec::new();
+    for rel in artifact_rel_paths {
+        let path = artifact_dir(workspace, target).join(rel);
+        if !path.exists() {
+            failures.push(format!("{} missing", path.display()));
+            continue;
+        }
+        if path.is_dir() {
+            match directory_yaml_tracking_failures(&repo, &workdir, &path) {
+                Ok(mut inner) => failures.append(&mut inner),
+                Err(err) => failures.push(format!("{}: {err}", path.display())),
+            }
+        } else if let Some(detail) = git_path_tracking_failure(&repo, &workdir, &path) {
+            failures.push(detail);
+        }
+    }
+
+    GateCheck {
+        id: format!("{}_git_tracking", phase),
+        description: "phase artifacts are tracked or staged in git".into(),
+        passed: failures.is_empty(),
+        detail: if failures.is_empty() {
+            None
+        } else {
+            Some(failures.join("; "))
+        },
+    }
+}
+
+fn git_path_tracking_failure(
+    repo: &git2::Repository,
+    workdir: &Path,
+    path: &Path,
+) -> Option<String> {
+    let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let repo_rel = canonical_path.strip_prefix(workdir).unwrap_or(path);
+    let status = repo.status_file(repo_rel).unwrap_or(git2::Status::WT_NEW);
+    let tracked_or_staged = status.is_empty()
+        || status.intersects(
+            git2::Status::INDEX_NEW
+                | git2::Status::INDEX_MODIFIED
+                | git2::Status::INDEX_RENAMED
+                | git2::Status::INDEX_TYPECHANGE,
+        );
+    if tracked_or_staged {
+        None
+    } else {
+        Some(format!("{} status {:?}", repo_rel.display(), status))
+    }
+}
+
+fn directory_yaml_tracking_failures(
+    repo: &git2::Repository,
+    workdir: &Path,
+    dir: &Path,
+) -> Result<Vec<String>> {
+    let mut failures = Vec::new();
+    let mut yaml_count = 0usize;
+    for entry in walkdir::WalkDir::new(dir) {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                failures.push(err.to_string());
+                continue;
+            }
+        };
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("yaml") {
+            yaml_count += 1;
+            if let Some(detail) = git_path_tracking_failure(repo, workdir, path) {
+                failures.push(detail);
+            }
+        }
+    }
+    if yaml_count == 0 {
+        failures.push(format!("{} has no YAML files", dir.display()));
+    }
+    Ok(failures)
+}
+
+fn directory_tracking_failures(
+    repo: &git2::Repository,
+    workdir: &Path,
+    dir: &Path,
+) -> Result<Vec<String>> {
+    let mut failures = Vec::new();
+    let mut file_count = 0usize;
+    for entry in walkdir::WalkDir::new(dir) {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                failures.push(err.to_string());
+                continue;
+            }
+        };
+        let path = entry.path();
+        if path.is_file() {
+            file_count += 1;
+            if let Some(detail) = git_path_tracking_failure(repo, workdir, path) {
+                failures.push(detail);
+            }
+        }
+    }
+    if file_count == 0 {
+        failures.push(format!("{} has no files", dir.display()));
+    }
+    Ok(failures)
+}
+
+fn p0_checks(_workspace: &Path, _target: &str, ad: &Path) -> Vec<GateCheck> {
     let path = ad.join("pipeline-state.yaml");
     let exists = path.exists();
     let mut checks = vec![GateCheck {
@@ -256,26 +403,7 @@ fn p0_checks(ad: &Path) -> Vec<GateCheck> {
     checks
 }
 
-fn p0_5_checks(ad: &Path) -> Vec<GateCheck> {
-    let path = ad.join("scope.yaml");
-    let exists = path.exists();
-    vec![GateCheck {
-        id: "P0.5_01".into(),
-        description: "scope.yaml exists with non-empty entries".into(),
-        passed: exists && validate_yaml_sequence_nonempty(&path, "entries"),
-        detail: if !exists {
-            Some("scope.yaml not found".into())
-        } else if !validate_yaml_parseable(&path) {
-            Some("scope.yaml is not valid YAML".into())
-        } else if !validate_yaml_sequence_nonempty(&path, "entries") {
-            Some("scope.yaml has empty or missing 'entries' field".into())
-        } else {
-            None
-        },
-    }]
-}
-
-fn p1_checks(ad: &Path) -> Vec<GateCheck> {
+fn p1_checks(workspace: &Path, target: &str, ad: &Path) -> Vec<GateCheck> {
     let names = [
         "functions.yaml",
         "callgraph.yaml",
@@ -285,7 +413,7 @@ fn p1_checks(ad: &Path) -> Vec<GateCheck> {
         "strings.yaml",
         "imports.yaml",
     ];
-    names
+    let mut checks: Vec<GateCheck> = names
         .iter()
         .map(|name| {
             let path = ad.join("baseline").join(name);
@@ -304,86 +432,225 @@ fn p1_checks(ad: &Path) -> Vec<GateCheck> {
                 },
             }
         })
-        .collect()
-}
+        .collect();
 
-fn p2_checks(ad: &Path) -> Vec<GateCheck> {
-    let mut checks = Vec::new();
-
-    // P2_01: evidence-candidates.yaml OR target-selection.yaml exists
-    let ev_path = ad.join("evidence-candidates.yaml");
-    let sel_path = ad.join("target-selection.yaml");
-    let review_path_exists = ev_path.exists() || sel_path.exists();
+    let runtime_path = ad.join("runtime").join("run-manifest.yaml");
     checks.push(GateCheck {
-        id: "P2_01".into(),
-        description: "evidence-candidates.yaml or target-selection.yaml exists".into(),
-        passed: review_path_exists,
-        detail: if review_path_exists {
+        id: "P1_run_manifest_yaml".into(),
+        description: "runtime/run-manifest.yaml exists with non-empty observations".into(),
+        passed: validate_yaml_sequence_nonempty(&runtime_path, "observations"),
+        detail: if runtime_path.exists() {
             None
         } else {
-            Some("Neither evidence-candidates.yaml nor target-selection.yaml found".into())
+            Some("runtime/run-manifest.yaml not found".into())
         },
     });
 
-    // P2_02: If identified.yaml exists, has >= 1 library with confidence >= medium
-    // P2_03: If third-party libs identified, function_classification coverage > 0%
+    let (run_record_count, run_record_failures) = runtime_run_record_failures(ad);
+    checks.push(GateCheck {
+        id: "P1_run_records".into(),
+        description: "runtime/run-manifest.yaml references parseable run record YAML".into(),
+        passed: run_record_count > 0 && run_record_failures.is_empty(),
+        detail: if run_record_failures.is_empty() {
+            Some(format!(
+                "{} manifest run records verified",
+                run_record_count
+            ))
+        } else {
+            Some(run_record_failures.join("; "))
+        },
+    });
+
+    let hotpath_path = ad.join("runtime").join("hotpaths").join("call-chain.yaml");
+    checks.push(GateCheck {
+        id: "P1_hotpath_call_chain".into(),
+        description: "runtime/hotpaths/call-chain.yaml exists with non-empty functions".into(),
+        passed: validate_yaml_sequence_nonempty(&hotpath_path, "functions"),
+        detail: if hotpath_path.exists() {
+            None
+        } else {
+            Some("runtime/hotpaths/call-chain.yaml not found".into())
+        },
+    });
+
+    let _ = (workspace, target);
+    checks
+}
+
+fn runtime_run_record_failures(ad: &Path) -> (usize, Vec<String>) {
+    let runtime_dir = ad.join("runtime");
+    let manifest_path = runtime_dir.join("run-manifest.yaml");
+    let content = match fs::read_to_string(&manifest_path) {
+        Ok(content) => content,
+        Err(_) => return (0, vec!["runtime/run-manifest.yaml not readable".into()]),
+    };
+    let doc = match serde_yaml::from_str::<serde_yaml::Value>(&content) {
+        Ok(doc) => doc,
+        Err(err) => {
+            return (
+                0,
+                vec![format!("runtime/run-manifest.yaml invalid YAML: {err}")],
+            );
+        }
+    };
+    let Some(records) = doc.get("run_records").and_then(|v| v.as_sequence()) else {
+        return (
+            0,
+            vec!["runtime/run-manifest.yaml has missing or non-sequence run_records".into()],
+        );
+    };
+    if records.is_empty() {
+        return (
+            0,
+            vec!["runtime/run-manifest.yaml has empty run_records".into()],
+        );
+    }
+
+    let mut failures = Vec::new();
+    let mut count = 0usize;
+    for entry in records {
+        let Some(rel) = entry.as_str() else {
+            failures.push("runtime run record path is not a string".into());
+            continue;
+        };
+        if !is_safe_relative_yaml_path(rel) {
+            failures.push(format!("{rel} is not a safe relative YAML path"));
+            continue;
+        }
+        count += 1;
+        let record_path = runtime_dir.join(rel);
+        let record_content = match fs::read_to_string(&record_path) {
+            Ok(content) => content,
+            Err(_) => {
+                failures.push(format!("missing run record {}", record_path.display()));
+                continue;
+            }
+        };
+        let record_doc = match serde_yaml::from_str::<serde_yaml::Value>(&record_content) {
+            Ok(doc) => doc,
+            Err(err) => {
+                failures.push(format!("{} invalid YAML: {err}", record_path.display()));
+                continue;
+            }
+        };
+        let has_observations = record_doc
+            .get("observations")
+            .and_then(|v| v.as_sequence())
+            .map(|seq| !seq.is_empty())
+            .unwrap_or(false);
+        if !has_observations {
+            failures.push(format!("{} has no observations", record_path.display()));
+        }
+    }
+
+    (count, failures)
+}
+
+fn is_safe_relative_yaml_path(raw: &str) -> bool {
+    let path = Path::new(raw);
+    !path.is_absolute()
+        && path.extension().and_then(|e| e.to_str()) == Some("yaml")
+        && path
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_)))
+}
+
+fn p2_checks(workspace: &Path, target: &str, ad: &Path) -> Vec<GateCheck> {
+    let mut checks = Vec::new();
+
     let identified_path = ad.join("third-party").join("identified.yaml");
+    let identified_ok = identified_path.exists() && validate_yaml_parseable(&identified_path);
+    checks.push(GateCheck {
+        id: "P2_01".into(),
+        description: "third-party/identified.yaml exists and is parseable".into(),
+        passed: identified_ok,
+        detail: if identified_ok {
+            None
+        } else if identified_path.exists() {
+            Some("third-party/identified.yaml is not valid YAML".into())
+        } else {
+            Some("third-party/identified.yaml not found".into())
+        },
+    });
+
     if identified_path.exists() {
         if let Ok(content) = fs::read_to_string(&identified_path) {
             if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
-                if let Some(libs) = doc.get("libraries").and_then(|v| v.as_sequence()) {
-                    let high_conf = libs
-                        .iter()
-                        .filter(|lib| {
-                            lib.get("confidence")
-                                .and_then(|c| c.as_str())
-                                .map(|c| c == "high" || c == "medium")
-                                .unwrap_or(false)
-                        })
-                        .count();
-                    checks.push(GateCheck {
-                        id: "P2_02".into(),
-                        description: "third-party: >= 1 library with confidence >= medium".into(),
-                        passed: high_conf >= 1,
-                        detail: Some(format!(
-                            "found {} libraries with confidence >= medium",
-                            high_conf
-                        )),
-                    });
+                match doc.get("libraries").and_then(|v| v.as_sequence()) {
+                    Some(libs) if libs.is_empty() => {
+                        checks.push(GateCheck {
+                            id: "P2_02".into(),
+                            description: "third-party review records no identified libraries"
+                                .into(),
+                            passed: true,
+                            detail: Some("libraries is empty; third-party checks waived".into()),
+                        });
+                        checks.push(GateCheck {
+                            id: "P2_03".into(),
+                            description:
+                                "third-party: function_classification coverage > 0% (skipped)"
+                                    .into(),
+                            passed: true,
+                            detail: Some("No third-party libraries recorded".into()),
+                        });
+                    }
+                    Some(libs) => {
+                        let high_conf = libs
+                            .iter()
+                            .filter(|lib| {
+                                lib.get("confidence")
+                                    .and_then(|c| c.as_str())
+                                    .map(|c| c == "high" || c == "medium")
+                                    .unwrap_or(false)
+                            })
+                            .count();
+                        checks.push(GateCheck {
+                            id: "P2_02".into(),
+                            description: "third-party: >= 1 library with confidence >= medium"
+                                .into(),
+                            passed: high_conf >= 1,
+                            detail: Some(format!(
+                                "found {} libraries with confidence >= medium",
+                                high_conf
+                            )),
+                        });
 
-                    let total_classified: usize = libs
-                        .iter()
-                        .filter_map(|lib| {
-                            lib.get("function_classifications")
-                                .and_then(|v| v.as_sequence())
-                        })
-                        .flatten()
-                        .count();
-                    let coverage_ok = total_classified > 0;
-                    checks.push(GateCheck {
-                        id: "P2_03".into(),
-                        description: "third-party: function_classification coverage > 0%".into(),
-                        passed: coverage_ok,
-                        detail: Some(format!(
-                            "{} functions classified across all libraries",
-                            total_classified
-                        )),
-                    });
-                } else {
-                    checks.push(GateCheck {
-                        id: "P2_02".into(),
-                        description:
-                            "third-party/identified.yaml parseable (skipped: no libs found)".into(),
-                        passed: true,
-                        detail: Some("No libraries found in identified.yaml".into()),
-                    });
-                    checks.push(GateCheck {
-                        id: "P2_03".into(),
-                        description: "third-party: function_classification coverage > 0% (skipped)"
-                            .into(),
-                        passed: true,
-                        detail: Some("No libraries found — classification check waived".into()),
-                    });
+                        let total_classified: usize = libs
+                            .iter()
+                            .filter_map(|lib| {
+                                lib.get("function_classifications")
+                                    .and_then(|v| v.as_sequence())
+                            })
+                            .flatten()
+                            .count();
+                        let coverage_ok = total_classified > 0;
+                        checks.push(GateCheck {
+                            id: "P2_03".into(),
+                            description: "third-party: function_classification coverage > 0%"
+                                .into(),
+                            passed: coverage_ok,
+                            detail: Some(format!(
+                                "{} functions classified across all libraries",
+                                total_classified
+                            )),
+                        });
+                    }
+                    None => {
+                        checks.push(GateCheck {
+                            id: "P2_02".into(),
+                            description: "third-party/identified.yaml has a libraries sequence"
+                                .into(),
+                            passed: false,
+                            detail: Some("libraries field missing or not a sequence".into()),
+                        });
+                        checks.push(GateCheck {
+                            id: "P2_03".into(),
+                            description: "third-party: function_classification coverage > 0%"
+                                .into(),
+                            passed: false,
+                            detail: Some("libraries field missing or not a sequence".into()),
+                        });
+                    }
                 }
             } else {
                 checks.push(GateCheck {
@@ -416,470 +683,287 @@ fn p2_checks(ad: &Path) -> Vec<GateCheck> {
     } else {
         checks.push(GateCheck {
             id: "P2_02".into(),
-            description: "third-party/identified.yaml exists (skipped: no third-party libs found)"
-                .into(),
-            passed: true,
-            detail: Some(
-                "No third-party/identified.yaml — third-party gate conditions waived".into(),
-            ),
+            description: "third-party: >= 1 library with confidence >= medium".into(),
+            passed: false,
+            detail: Some("No third-party/identified.yaml".into()),
         });
         checks.push(GateCheck {
             id: "P2_03".into(),
-            description: "third-party: function_classification coverage > 0% (skipped)".into(),
-            passed: true,
-            detail: Some("No third-party libs identified — classification check waived".into()),
+            description: "third-party: function_classification coverage > 0%".into(),
+            passed: false,
+            detail: Some("No third-party/identified.yaml".into()),
         });
     }
+
+    let pristine_failures = third_party_pristine_failures(workspace, target, ad);
+    checks.push(GateCheck {
+        id: "P2_04".into(),
+        description: "third-party pristine source directories exist with source_path records"
+            .into(),
+        passed: pristine_failures.is_empty(),
+        detail: if pristine_failures.is_empty() {
+            None
+        } else {
+            Some(pristine_failures.join("; "))
+        },
+    });
 
     checks
 }
 
-fn p3_checks(ad: &Path) -> Vec<GateCheck> {
+fn third_party_pristine_failures(workspace: &Path, _target: &str, ad: &Path) -> Vec<String> {
+    let identified_path = ad.join("third-party").join("identified.yaml");
+    let content = match fs::read_to_string(&identified_path) {
+        Ok(content) => content,
+        Err(_) => return vec!["third-party/identified.yaml not readable".into()],
+    };
+    let doc = match serde_yaml::from_str::<serde_yaml::Value>(&content) {
+        Ok(doc) => doc,
+        Err(_) => return vec!["third-party/identified.yaml not parseable".into()],
+    };
+    let libs = match doc.get("libraries").and_then(|v| v.as_sequence()) {
+        Some(libs) if !libs.is_empty() => libs,
+        Some(_) => return vec![],
+        None => return vec!["libraries field missing or not a sequence".into()],
+    };
+
+    let repo = git2::Repository::discover(workspace).ok();
+    let workdir = repo
+        .as_ref()
+        .and_then(|repo| repo.workdir())
+        .and_then(|path| std::fs::canonicalize(path).ok());
+    let mut failures = Vec::new();
+
+    for lib in libs {
+        let name = lib
+            .get("library")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<unknown>");
+        if lib.get("source_path").and_then(|v| v.as_str()).is_none() {
+            failures.push(format!("{name} missing source_path"));
+        }
+        let Some(pristine_path) = lib.get("pristine_path").and_then(|v| v.as_str()) else {
+            failures.push(format!("{name} missing pristine_path"));
+            continue;
+        };
+        let path = ad.join(pristine_path);
+        if !path.is_dir() {
+            failures.push(format!(
+                "{name} pristine directory missing: {}",
+                path.display()
+            ));
+            continue;
+        }
+        if let (Some(repo), Some(workdir)) = (repo.as_ref(), workdir.as_ref()) {
+            match directory_tracking_failures(repo, workdir, &path) {
+                Ok(mut inner) => failures.append(&mut inner),
+                Err(err) => failures.push(format!("{}: {err}", path.display())),
+            }
+        }
+    }
+
+    failures
+}
+
+fn p3_checks(workspace: &Path, target: &str, ad: &Path) -> Vec<GateCheck> {
     let mut checks = Vec::new();
 
-    // P3_01: target-selection.yaml exists with selected_target field
-    let sel_path = ad.join("target-selection.yaml");
-    let has_selected = if sel_path.exists() {
-        if let Ok(content) = fs::read_to_string(&sel_path) {
-            if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
-                doc.get("selected_target").is_some()
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    };
+    let renames_path = ad.join("metadata").join("renames.yaml");
     checks.push(GateCheck {
         id: "P3_01".into(),
-        description: "target-selection.yaml exists with selected_target".into(),
-        passed: has_selected,
-        detail: if has_selected {
+        description: "metadata/renames.yaml exists with non-empty renames".into(),
+        passed: validate_yaml_sequence_nonempty(&renames_path, "renames"),
+        detail: if renames_path.exists() {
             None
         } else {
-            Some("selected_target field missing".into())
+            Some("metadata/renames.yaml not found".into())
         },
     });
 
-    // P3_02: At least one candidate with status == ready or selected as default
-    let has_ready = if sel_path.exists() {
-        if let Ok(content) = fs::read_to_string(&sel_path) {
-            if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
-                if let Some(cands) = doc.get("candidates").and_then(|v| v.as_sequence()) {
-                    cands.iter().any(|c| {
-                        c.get("status")
-                            .and_then(|s| s.as_str())
-                            .map(|s| s == "ready" || s == "selected")
-                            .unwrap_or(false)
-                    })
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    };
+    let signatures_path = ad.join("metadata").join("signatures.yaml");
     checks.push(GateCheck {
         id: "P3_02".into(),
-        description: "target-selection: >= 1 candidate with status == ready or selected".into(),
-        passed: has_ready,
-        detail: None,
+        description: "metadata/signatures.yaml exists with non-empty signatures".into(),
+        passed: validate_yaml_sequence_nonempty(&signatures_path, "signatures"),
+        detail: if signatures_path.exists() {
+            None
+        } else {
+            Some("metadata/signatures.yaml not found".into())
+        },
     });
 
-    // P3_03: Scope entries non-empty
-    let scope_path = ad.join("scope.yaml");
-    let scope_nonempty = if scope_path.exists() {
-        if let Ok(content) = fs::read_to_string(&scope_path) {
-            if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
-                if let Some(entries) = doc.get("entries").and_then(|v| v.as_sequence()) {
-                    !entries.is_empty()
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    };
+    let coverage_failures = hotpath_metadata_coverage_failures(ad);
     checks.push(GateCheck {
         id: "P3_03".into(),
-        description: "scope: entries non-empty".into(),
-        passed: scope_nonempty,
-        detail: None,
+        description: "P3 metadata covers every runtime hotpath function".into(),
+        passed: coverage_failures.is_empty(),
+        detail: if coverage_failures.is_empty() {
+            None
+        } else {
+            Some(coverage_failures.join("; "))
+        },
     });
 
+    let _ = (workspace, target);
     checks
+}
+
+fn hotpath_metadata_coverage_failures(ad: &Path) -> Vec<String> {
+    let hotpath_addrs = yaml_addr_set(
+        &ad.join("runtime").join("hotpaths").join("call-chain.yaml"),
+        "functions",
+    );
+    if hotpath_addrs.is_empty() {
+        return vec!["runtime/hotpaths/call-chain.yaml has no functions".into()];
+    }
+    let rename_addrs = yaml_addr_set(&ad.join("metadata").join("renames.yaml"), "renames");
+    let signature_addrs = yaml_addr_set(&ad.join("metadata").join("signatures.yaml"), "signatures");
+    hotpath_addrs
+        .into_iter()
+        .filter_map(|addr| {
+            if !rename_addrs.contains(&addr) {
+                Some(format!("{addr} missing rename"))
+            } else if !signature_addrs.contains(&addr) {
+                Some(format!("{addr} missing signature"))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn p4_checks(_workspace: &Path, _target: &str, ad: &Path) -> Vec<GateCheck> {
     let mut checks = Vec::new();
 
-    // P4_01: decompilation/progress.yaml exists
-    let prog_path = ad.join("decompilation").join("progress.yaml");
+    let functions_dir = ad.join("substitution").join("functions");
+    let substitution_records = substitution_record_paths(&functions_dir);
     checks.push(GateCheck {
         id: "P4_01".into(),
-        description: "decompilation/progress.yaml exists".into(),
-        passed: prog_path.exists(),
-        detail: None,
+        description: "substitution/functions contains function substitution records".into(),
+        passed: !substitution_records.is_empty(),
+        detail: Some(format!(
+            "{} substitution records found",
+            substitution_records.len()
+        )),
     });
 
-    // P4_02: next-batch.yaml exists and non-empty
-    let batch_path = ad.join("decompilation").join("next-batch.yaml");
-    let batch_nonempty = if batch_path.exists() {
-        if let Ok(content) = fs::read_to_string(&batch_path) {
-            if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
-                if let Some(batch) = doc.get("batch").and_then(|b| b.as_sequence()) {
-                    !batch.is_empty()
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    };
+    let fixture_failures = substitution_fixture_failures(&substitution_records);
     checks.push(GateCheck {
         id: "P4_02".into(),
-        description: "decompilation/next-batch.yaml exists and non-empty".into(),
-        passed: batch_nonempty,
-        detail: None,
+        description: "each substitution record has at least one fixture".into(),
+        passed: fixture_failures.is_empty(),
+        detail: if fixture_failures.is_empty() {
+            None
+        } else {
+            Some(fixture_failures.join("; "))
+        },
     });
 
-    // P4_03: All next-batch entries reference valid functions (in scope or baseline)
-    // The batch contains scope entries not yet in progress - they should be valid tracked addresses
-    let all_valid = if batch_path.exists() {
-        let batch_addrs: std::collections::HashSet<String> =
-            if let Ok(content) = fs::read_to_string(&batch_path) {
-                if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
-                    if let Some(batch) = doc.get("batch").and_then(|b| b.as_sequence()) {
-                        batch
-                            .iter()
-                            .filter_map(|e| {
-                                e.get("addr").and_then(|a| a.as_str().map(|s| s.to_owned()))
-                            })
-                            .collect()
-                    } else {
-                        std::collections::HashSet::new()
-                    }
-                } else {
-                    std::collections::HashSet::new()
-                }
-            } else {
-                std::collections::HashSet::new()
-            };
-        // Validate batch addresses against scope entries
-        let scope_path = ad.join("scope.yaml");
-        let scope_addrs: std::collections::HashSet<String> =
-            if let Ok(content) = fs::read_to_string(&scope_path) {
-                if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
-                    doc.get("entries")
-                        .and_then(|e| e.as_sequence())
-                        .map(|seq| {
-                            seq.iter()
-                                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
-                                .collect()
-                        })
-                        .unwrap_or_default()
-                } else {
-                    std::collections::HashSet::new()
-                }
-            } else {
-                std::collections::HashSet::new()
-            };
-        // Also check baseline functions
-        let baseline_path = ad.join("baseline").join("functions.yaml");
-        let baseline_addrs: std::collections::HashSet<String> =
-            if let Ok(content) = fs::read_to_string(&baseline_path) {
-                if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
-                    doc.get("functions")
-                        .and_then(|f| f.as_sequence())
-                        .map(|seq| {
-                            seq.iter()
-                                .filter_map(|e| {
-                                    e.get("addr").and_then(|a| a.as_str().map(|s| s.to_owned()))
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_default()
-                } else {
-                    std::collections::HashSet::new()
-                }
-            } else {
-                std::collections::HashSet::new()
-            };
-        // Batch addresses are valid if they appear in scope OR baseline
-        batch_addrs
-            .iter()
-            .all(|addr| scope_addrs.contains(addr) || baseline_addrs.contains(addr))
-    } else {
-        true // Skip if no batch
-    };
+    let metadata_failures = substitution_metadata_failures(ad, &substitution_records);
     checks.push(GateCheck {
         id: "P4_03".into(),
-        description: "next-batch entries reference valid scope or baseline addresses".into(),
-        passed: all_valid,
-        detail: None,
+        description: "substitutions reference P3 functions with names and signatures".into(),
+        passed: metadata_failures.is_empty(),
+        detail: if metadata_failures.is_empty() {
+            None
+        } else {
+            Some(metadata_failures.join("; "))
+        },
     });
 
     checks
 }
 
-fn p5_checks(_workspace: &Path, _target: &str, ad: &Path) -> Vec<GateCheck> {
-    let mut checks = Vec::new();
-
-    // P5_01: >= 1 decompiled C file exists
-    let fn_dir = ad.join("decompilation").join("functions");
-    let decompiled_count = if fn_dir.exists() {
-        std::fs::read_dir(&fn_dir)
-            .map(|it| {
-                it.filter_map(|e| e.ok())
-                    .filter(|e| e.path().is_dir())
-                    .count()
-            })
-            .unwrap_or(0)
-    } else {
-        0
-    };
-    checks.push(GateCheck {
-        id: "P5_01".into(),
-        description: ">= 1 decompiled C file exists".into(),
-        passed: decompiled_count >= 1,
-        detail: Some(format!(
-            "found {} decompiled function directories",
-            decompiled_count
-        )),
-    });
-
-    // P5_02: Coverage >= 10% threshold
-    let progress_path = ad.join("decompilation").join("progress.yaml");
-    let baseline_fn_path = ad.join("baseline").join("functions.yaml");
-    if progress_path.exists() && baseline_fn_path.exists() {
-        if let (Ok(pc), Ok(fc)) = (
-            fs::read_to_string(&progress_path),
-            fs::read_to_string(&baseline_fn_path),
-        ) {
-            if let (Ok(prog_doc), Ok(fn_doc)) = (
-                serde_yaml::from_str::<serde_yaml::Value>(&pc),
-                serde_yaml::from_str::<serde_yaml::Value>(&fc),
-            ) {
-                let prog_seq = prog_doc.get("functions").and_then(|f| f.as_sequence());
-                let fn_seq = fn_doc.get("functions").and_then(|f| f.as_sequence());
-                if let (Some(ps), Some(fs)) = (prog_seq, fn_seq) {
-                    let total = fs.len();
-                    let done = ps
-                        .iter()
-                        .filter(|e| {
-                            e.get("state")
-                                .and_then(|s| s.as_str())
-                                .map(|s| s == "decompiled")
-                                .unwrap_or(false)
-                        })
-                        .count();
-                    if let Some(pct) = (done * 100).checked_div(total) {
-                        checks.push(GateCheck {
-                            id: "P5_02".into(),
-                            description: format!("coverage >= 10% (currently {}%)", pct),
-                            passed: pct >= 10,
-                            detail: Some(format!("{}/{} functions decompiled", done, total)),
-                        });
-                    } else {
-                        checks.push(GateCheck {
-                            id: "P5_02".into(),
-                            description: "coverage >= 10%".into(),
-                            passed: false,
-                            detail: Some("0 functions in baseline".into()),
-                        });
-                    }
-                } else {
-                    checks.push(GateCheck {
-                        id: "P5_02".into(),
-                        description: "coverage >= 10%".into(),
-                        passed: false,
-                        detail: Some("failed to parse progress or baseline".into()),
-                    });
-                }
-            } else {
-                checks.push(GateCheck {
-                    id: "P5_02".into(),
-                    description: "coverage >= 10%".into(),
-                    passed: false,
-                    detail: Some("failed to read progress or baseline".into()),
-                });
-            }
-        } else {
-            checks.push(GateCheck {
-                id: "P5_02".into(),
-                description: "coverage >= 10%".into(),
-                passed: false,
-                detail: Some("failed to read progress or baseline".into()),
-            });
-        }
-    } else {
-        checks.push(GateCheck {
-            id: "P5_02".into(),
-            description: "coverage >= 10%".into(),
-            passed: false,
-            detail: Some("progress.yaml or functions.yaml missing".into()),
-        });
+fn substitution_record_paths(functions_dir: &Path) -> Vec<std::path::PathBuf> {
+    if !functions_dir.exists() {
+        return vec![];
     }
-
-    // P5_03: Each decompiled function has decompilation-record.yaml with required fields
-    let record_issues: Vec<String> = if fn_dir.exists() {
-        std::fs::read_dir(&fn_dir)
-            .map(|it| {
-                it.filter_map(|e| e.ok())
-                    .filter(|e| e.path().is_dir())
-                    .filter_map(|d| {
-                        let record_path = d.path().join("decompilation-record.yaml");
-                        if record_path.exists() {
-                            if let Ok(content) = fs::read_to_string(&record_path) {
-                                if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&content)
-                                {
-                                    let has_required = ["fn_id", "addr", "name", "prototype"]
-                                        .iter()
-                                        .all(|f| doc.get(*f).is_some());
-                                    if !has_required {
-                                        return Some(
-                                            d.path()
-                                                .file_name()
-                                                .map(|n| n.to_string_lossy().into_owned())
-                                                .unwrap_or_default(),
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        None
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    } else {
-        vec![]
-    };
-    checks.push(GateCheck {
-        id: "P5_03".into(),
-        description: "each decompiled function has decompilation-record.yaml with required fields"
-            .into(),
-        passed: record_issues.is_empty(),
-        detail: if record_issues.is_empty() {
-            None
-        } else {
-            Some(format!(
-                "missing required fields in: {}",
-                record_issues.join(", ")
-            ))
-        },
-    });
-
-    checks
+    let mut paths: Vec<_> = std::fs::read_dir(functions_dir)
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path().join("substitution.yaml"))
+                .filter(|path| path.exists())
+                .collect()
+        })
+        .unwrap_or_default();
+    paths.sort();
+    paths
 }
 
-fn p6_checks(_workspace: &Path, _target: &str, ad: &Path) -> Vec<GateCheck> {
-    let mut checks = Vec::new();
+fn substitution_fixture_failures(records: &[std::path::PathBuf]) -> Vec<String> {
+    records
+        .iter()
+        .filter_map(|path| {
+            let content = fs::read_to_string(path).ok()?;
+            let doc = serde_yaml::from_str::<serde_yaml::Value>(&content).ok()?;
+            let ok = doc
+                .get("fixtures")
+                .and_then(|v| v.as_sequence())
+                .map(|seq| !seq.is_empty())
+                .unwrap_or(false);
+            if ok {
+                None
+            } else {
+                Some(format!("{} has no fixtures", path.display()))
+            }
+        })
+        .collect()
+}
 
-    // P6_01: verification-result.yaml exists for each decompiled function
-    let fn_dir = ad.join("decompilation").join("functions");
-    let verified_count = if fn_dir.exists() {
-        std::fs::read_dir(&fn_dir)
-            .map(|it| {
-                it.filter_map(|e| e.ok())
-                    .filter(|e| e.path().is_dir())
-                    .filter(|d| d.path().join("verification-result.yaml").exists())
-                    .count()
-            })
-            .unwrap_or(0)
-    } else {
-        0
-    };
-    let total_decompiled = if fn_dir.exists() {
-        std::fs::read_dir(&fn_dir)
-            .map(|it| {
-                it.filter_map(|e| e.ok())
-                    .filter(|e| e.path().is_dir())
-                    .count()
-            })
-            .unwrap_or(0)
-    } else {
-        0
-    };
-    checks.push(GateCheck {
-        id: "P6_01".into(),
-        description: "verification-result.yaml exists for each decompiled function".into(),
-        passed: verified_count >= total_decompiled && total_decompiled > 0,
-        detail: Some(format!(
-            "{}/{} functions have verification-result.yaml",
-            verified_count, total_decompiled
-        )),
-    });
+fn substitution_metadata_failures(ad: &Path, records: &[std::path::PathBuf]) -> Vec<String> {
+    let rename_addrs = yaml_addr_set(&ad.join("metadata").join("renames.yaml"), "renames");
+    let signature_addrs = yaml_addr_set(&ad.join("metadata").join("signatures.yaml"), "signatures");
+    let mut failures = Vec::new();
+    for path in records {
+        let content = match fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(err) => {
+                failures.push(format!("{} unreadable: {err}", path.display()));
+                continue;
+            }
+        };
+        let doc = match serde_yaml::from_str::<serde_yaml::Value>(&content) {
+            Ok(doc) => doc,
+            Err(err) => {
+                failures.push(format!("{} invalid YAML: {err}", path.display()));
+                continue;
+            }
+        };
+        let Some(addr) = doc.get("addr").and_then(|v| v.as_str()) else {
+            failures.push(format!("{} missing addr", path.display()));
+            continue;
+        };
+        if !rename_addrs.contains(addr) {
+            failures.push(format!("{addr} missing metadata rename"));
+        }
+        if !signature_addrs.contains(addr) {
+            failures.push(format!("{addr} missing metadata signature"));
+        }
+    }
+    failures
+}
 
-    // P6_02: No unresolved mismatches without notes
-    let unresolved_issues: Vec<String> = if fn_dir.exists() {
-        std::fs::read_dir(&fn_dir)
-            .map(|it| {
-                it.filter_map(|e| e.ok())
-                    .filter(|e| e.path().is_dir())
-                    .filter_map(|d| {
-                        let vr_path = d.path().join("verification-result.yaml");
-                        if vr_path.exists() {
-                            let content = fs::read_to_string(&vr_path).ok()?;
-                            let doc = serde_yaml::from_str::<serde_yaml::Value>(&content).ok()?;
-                            let mismatches = doc.get("mismatches")?.as_sequence()?;
-                            let has_unresolved = mismatches.iter().any(|m| {
-                                m.get("resolved")
-                                    .and_then(|r| r.as_bool())
-                                    .map(|r| !r)
-                                    .unwrap_or(false)
-                                    && m.get("note").is_none()
-                            });
-                            if has_unresolved {
-                                Some(
-                                    d.path()
-                                        .file_name()
-                                        .map(|n| n.to_string_lossy().into_owned())
-                                        .unwrap_or_default(),
-                                )
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    } else {
-        vec![]
+fn yaml_addr_set(path: &Path, sequence: &str) -> std::collections::HashSet<String> {
+    let content = match fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(_) => return std::collections::HashSet::new(),
     };
-    checks.push(GateCheck {
-        id: "P6_02".into(),
-        description: "no unresolved mismatches without notes".into(),
-        passed: unresolved_issues.is_empty(),
-        detail: if unresolved_issues.is_empty() {
-            None
-        } else {
-            Some(format!(
-                "unresolved mismatches in: {}",
-                unresolved_issues.join(", ")
-            ))
-        },
-    });
-
-    checks
+    let doc = match serde_yaml::from_str::<serde_yaml::Value>(&content) {
+        Ok(doc) => doc,
+        Err(_) => return std::collections::HashSet::new(),
+    };
+    doc.get(sequence)
+        .and_then(|v| v.as_sequence())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|entry| {
+                    entry
+                        .get("addr")
+                        .and_then(|addr| addr.as_str())
+                        .map(|addr| addr.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }

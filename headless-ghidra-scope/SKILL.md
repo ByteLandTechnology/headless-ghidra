@@ -1,14 +1,14 @@
 ---
 name: "headless-ghidra-scope"
-description: "P0.5 sub-skill: define analysis scope by selecting functions, address ranges, or symbols from the initialized target."
+description: "Deprecated compatibility-only P0.5 alias: scope selection now belongs to P0 Intake."
 phase: "P0.5"
 ---
 
 # Headless Ghidra Scope — P0.5
 
-P0.5 refines the analysis surface for a target. After P0 creates the workspace
-and initial (possibly empty) `scope.yaml`, this phase populates scope entries
-that guide downstream baseline extraction and decompilation.
+Deprecated compatibility-only alias. Scope selection is now part of P0 Intake;
+do not route new workflows here as a primary pipeline stage. Keep this document
+only for older CLI phase aliases or historical runs that still mention P0.5.
 
 ## Required ghidra-agent-cli Commands
 
@@ -34,7 +34,7 @@ that guide downstream baseline extraction and decompilation.
 
 - `scope.yaml` has a non-empty `entries` sequence.
 - Each entry references a valid address, function name, or symbol.
-- P0.5 gate passes (`scope.yaml exists with non-empty entries`).
+- Compatibility P0.5 gate passes when older runs still require it.
 
 ## Constraints
 
@@ -44,4 +44,4 @@ that guide downstream baseline extraction and decompilation.
 
 ## Next Step
 
-- P0.5 gate passes → `headless-ghidra-baseline`
+- Compatibility P0.5 gate passes → `headless-ghidra-baseline`

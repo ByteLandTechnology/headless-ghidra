@@ -1,7 +1,7 @@
-//! Integration test: Full pipeline from init to P6 gate
+//! Integration test: Full pipeline from init to P4 gate
 //!
 //! This test creates a real binary, initializes a workspace, and progressively
-//! advances through all gate phases (P0 -> P0.5 -> P1 -> P2 -> P3 -> P4 -> P5 -> P6),
+//! advances through all primary gate phases (P0 -> P1 -> P2 -> P3 -> P4),
 //! verifying each gate passes before advancing to the next.
 //!
 //! Run with: cargo test --test integration_pipeline_test
@@ -40,6 +40,125 @@ int main() { printf("%d\n", add(1,2)); return 0; }
 
 fn cli() -> Command {
     Command::cargo_bin("ghidra-agent-cli").unwrap()
+}
+
+fn command_available(command: &str, args: &[&str]) -> bool {
+    std::process::Command::new(command)
+        .args(args)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn frida_available() -> bool {
+    command_available("frida", &["--version"])
+}
+
+fn cli_command_succeeds(args: &[&str]) -> bool {
+    let mut command = cli();
+    command.args(args);
+    command
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn ghidra_available() -> bool {
+    cli_command_succeeds(&["ghidra", "discover"])
+}
+
+fn record_runtime_p1(workspace: &str) {
+    cli()
+        .args(["--workspace", workspace])
+        .args(["--target", "test_bin"])
+        .args(["runtime", "record"])
+        .args(["--key", "entrypoint", "--value", "0x1000"])
+        .assert()
+        .success();
+
+    cli()
+        .args(["--workspace", workspace])
+        .args(["--target", "test_bin"])
+        .args(["hotpath", "add"])
+        .args(["--addr", "0x1000", "--reason", "integration runtime sample"])
+        .assert()
+        .success();
+}
+
+fn record_third_party_p2(tmp: &TempDir, workspace: &str) {
+    let source = tmp.path().join("zlib-src");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("README"), "upstream").unwrap();
+
+    cli()
+        .args(["--workspace", workspace])
+        .args(["--target", "test_bin"])
+        .args(["third-party", "add"])
+        .args([
+            "--library",
+            "zlib",
+            "--version",
+            "1.2.13",
+            "--confidence",
+            "high",
+        ])
+        .assert()
+        .success();
+
+    cli()
+        .args(["--workspace", workspace])
+        .args(["--target", "test_bin"])
+        .args(["third-party", "vendor-pristine"])
+        .args([
+            "--library",
+            "zlib",
+            "--source-path",
+            source.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    cli()
+        .args(["--workspace", workspace])
+        .args(["--target", "test_bin"])
+        .args(["third-party", "classify-function"])
+        .args(["--addr", "0x1000", "--classification", "library"])
+        .assert()
+        .success();
+}
+
+fn record_metadata_p3(workspace: &str) {
+    cli()
+        .args(["--workspace", workspace])
+        .args(["--target", "test_bin"])
+        .args(["metadata", "enrich-function"])
+        .args([
+            "--addr",
+            "0x1000",
+            "--name",
+            "main",
+            "--prototype",
+            "int(int,char**)",
+        ])
+        .assert()
+        .success();
+}
+
+fn record_substitution_p4(workspace: &str) {
+    cli()
+        .args(["--workspace", workspace])
+        .args(["--target", "test_bin"])
+        .args(["substitute", "add"])
+        .args([
+            "--fn-id",
+            "fn_001",
+            "--addr",
+            "0x1000",
+            "--replacement",
+            "return 0;",
+        ])
+        .assert()
+        .success();
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +300,8 @@ fn setup_workspace_p1(tmp: &TempDir) {
         .args(["--library", "libSystem", "--symbol", "malloc"])
         .assert()
         .success();
+
+    record_runtime_p1(workspace);
 }
 
 // ---------------------------------------------------------------------------
@@ -334,6 +455,24 @@ fn phase1_baseline_files_created() {
         ad.join("imports.yaml").exists(),
         "P1: imports.yaml must exist"
     );
+
+    let runtime = tmp
+        .path()
+        .join("artifacts")
+        .join("test_bin")
+        .join("runtime");
+    assert!(
+        runtime.join("run-manifest.yaml").exists(),
+        "P1: run-manifest.yaml must exist"
+    );
+    assert!(
+        runtime.join("run-records").join("entrypoint.yaml").exists(),
+        "P1: run record must exist"
+    );
+    assert!(
+        runtime.join("hotpaths").join("call-chain.yaml").exists(),
+        "P1: call-chain.yaml must exist"
+    );
 }
 
 #[test]
@@ -362,15 +501,7 @@ fn phase2_gate_check() {
     let tmp = TempDir::new().unwrap();
     setup_workspace_p1(&tmp);
     let workspace = tmp.path().to_str().unwrap();
-    let ad = tmp.path().join("artifacts").join("test_bin");
-
-    // Create target-selection.yaml for P2
-    let target_selection = r#"candidates:
-  - path: /usr/lib/libfoo.dylib
-    status: ready
-    version: "1.0"
-"#;
-    fs::write(ad.join("target-selection.yaml"), target_selection).unwrap();
+    record_third_party_p2(&tmp, workspace);
 
     cli()
         .args(["--workspace", workspace])
@@ -392,15 +523,7 @@ fn phase3_gate_check() {
     let tmp = TempDir::new().unwrap();
     setup_workspace_p1(&tmp);
     let workspace = tmp.path().to_str().unwrap();
-    let ad = tmp.path().join("artifacts").join("test_bin");
-
-    // Create target-selection.yaml with selected_target for P3
-    let target_selection = r#"selected_target: /usr/lib/libfoo.dylib
-candidates:
-  - path: /usr/lib/libfoo.dylib
-    status: ready
-"#;
-    fs::write(ad.join("target-selection.yaml"), target_selection).unwrap();
+    record_metadata_p3(workspace);
 
     cli()
         .args(["--workspace", workspace])
@@ -422,34 +545,8 @@ fn phase4_gate_check() {
     let tmp = TempDir::new().unwrap();
     setup_workspace_p1(&tmp);
     let workspace = tmp.path().to_str().unwrap();
-    let ad = tmp.path().join("artifacts").join("test_bin");
-
-    // P3 artifacts
-    let target_selection = r#"selected_target: /usr/lib/libfoo.dylib
-candidates:
-  - path: /usr/lib/libfoo.dylib
-    status: ready
-"#;
-    fs::write(ad.join("target-selection.yaml"), target_selection).unwrap();
-
-    // Mark function as decompiled
-    cli()
-        .args(["--workspace", workspace])
-        .args(["--target", "test_bin"])
-        .arg("progress")
-        .arg("mark-decompiled")
-        .args(["--fn-id", "fn_001", "--addr", "0x1000"])
-        .assert()
-        .success();
-
-    // Compute next batch
-    cli()
-        .args(["--workspace", workspace])
-        .args(["--target", "test_bin"])
-        .arg("progress")
-        .arg("compute-next-batch")
-        .assert()
-        .success();
+    record_metadata_p3(workspace);
+    record_substitution_p4(workspace);
 
     cli()
         .args(["--workspace", workspace])
@@ -748,6 +845,8 @@ fn full_pipeline_all_gates_pass() {
         .assert()
         .success();
 
+    record_runtime_p1(workspace);
+
     let result = cli()
         .args(["--workspace", workspace])
         .args(["--target", "test_bin"])
@@ -759,11 +858,7 @@ fn full_pipeline_all_gates_pass() {
     assert!(String::from_utf8_lossy(&result.get_output().stdout).contains("passed"));
 
     // ---- P2: Third-party ----
-    fs::write(
-        ad.join("target-selection.yaml"),
-        "candidates:\n  - path: /usr/lib/libfoo.dylib\n    status: ready\n",
-    )
-    .unwrap();
+    record_third_party_p2(&tmp, workspace);
 
     let result = cli()
         .args(["--workspace", workspace])
@@ -775,8 +870,8 @@ fn full_pipeline_all_gates_pass() {
         .success();
     assert!(String::from_utf8_lossy(&result.get_output().stdout).contains("passed"));
 
-    // ---- P3: Target selected ----
-    fs::write(ad.join("target-selection.yaml"), "selected_target: /usr/lib/libfoo.dylib\ncandidates:\n  - path: /usr/lib/libfoo.dylib\n    status: ready\n").unwrap();
+    // ---- P3: Metadata enrichment ----
+    record_metadata_p3(workspace);
 
     let result = cli()
         .args(["--workspace", workspace])
@@ -788,23 +883,8 @@ fn full_pipeline_all_gates_pass() {
         .success();
     assert!(String::from_utf8_lossy(&result.get_output().stdout).contains("passed"));
 
-    // ---- P4: Decompilation progress ----
-    cli()
-        .args(["--workspace", workspace])
-        .args(["--target", "test_bin"])
-        .arg("progress")
-        .arg("mark-decompiled")
-        .args(["--fn-id", "fn_001", "--addr", "0x1000"])
-        .assert()
-        .success();
-
-    cli()
-        .args(["--workspace", workspace])
-        .args(["--target", "test_bin"])
-        .arg("progress")
-        .arg("compute-next-batch")
-        .assert()
-        .success();
+    // ---- P4: Function substitution ----
+    record_substitution_p4(workspace);
 
     let result = cli()
         .args(["--workspace", workspace])
@@ -860,8 +940,12 @@ fn full_pipeline_all_gates_pass() {
 // ============================================================================
 
 #[test]
-#[ignore = "requires frida CLI binary"]
 fn frida_device_list_works() {
+    if !frida_available() {
+        eprintln!("skipping frida device-list integration test; Frida is unavailable");
+        return;
+    }
+
     cli()
         .arg("frida")
         .arg("device-list")
@@ -963,8 +1047,12 @@ fn inspect_binary_works() {
 }
 
 #[test]
-#[ignore = "requires Ghidra installation"]
 fn ghidra_discover_works() {
+    if !ghidra_available() {
+        eprintln!("skipping ghidra discover integration test; Ghidra is unavailable");
+        return;
+    }
+
     let tmp = TempDir::new().unwrap();
 
     cli()
