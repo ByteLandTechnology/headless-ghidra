@@ -24,6 +24,7 @@ workflow order, stage routing, or orchestration policy. Those are defined by
 ## Installation
 
 <!-- SEMANTIC_RELEASE_VERSION -->
+
 Install the matching CLI version into the skill directory (not global):
 
 ```sh
@@ -67,26 +68,26 @@ Global flags:
 
 ## Command Groups
 
-| Group | Purpose |
-|---|---|
-| `workspace` | Initialize a target workspace and manage phase state |
-| `scope` | Manage `scope.yaml` |
-| `functions` / `callgraph` / `types` / `vtables` / `constants` / `strings` / `imports` | Manage baseline YAML metadata |
-| `third-party` | Manage `third-party/identified.yaml`, explicit no-third-party reviews, and pristine source metadata |
-| `runtime` | Manage `runtime/run-manifest.yaml` and `runtime/run-records/*.yaml` |
-| `hotpath` | Manage `runtime/hotpaths/call-chain.yaml` |
-| `metadata` | Manage P3 metadata YAML such as `metadata/renames.yaml` and `metadata/signatures.yaml` |
-| `substitute` | Manage P4 substitution records under `substitution/functions/<fn_id>/` |
-| `git-check` | Validate artifact YAML files are tracked or staged in git |
-| `execution-log` | Append and inspect execution records |
-| `progress` | Compatibility helpers for legacy decompilation progress YAML |
-| `gate` | Run aggregate gate checks and inspect gate reports |
-| `ghidra` | Discover Ghidra, import/analyze, export baseline, apply changes, decompile, rebuild |
-| `frida` | Device, capture, compare, trace, run, and invoke helpers |
-| `inspect` | Read-only binary inspection helpers |
-| `context` | Active context helpers |
-| `paths` | Show resolved workspace/runtime paths |
-| `validate` / `help` | Validation and help surfaces |
+| Group                                                                                 | Purpose                                                                                             |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `workspace`                                                                           | Initialize a target workspace and manage phase state                                                |
+| `scope`                                                                               | Manage `scope.yaml`                                                                                 |
+| `functions` / `callgraph` / `types` / `vtables` / `constants` / `strings` / `imports` | Manage baseline YAML metadata                                                                       |
+| `third-party`                                                                         | Manage `third-party/identified.yaml`, explicit no-third-party reviews, and pristine source metadata |
+| `runtime`                                                                             | Manage `runtime/run-manifest.yaml` and `runtime/run-records/*.yaml`                                 |
+| `hotpath`                                                                             | Manage `runtime/hotpaths/call-chain.yaml`                                                           |
+| `metadata`                                                                            | Manage P3 metadata YAML such as `metadata/renames.yaml` and `metadata/signatures.yaml`              |
+| `substitute`                                                                          | Manage P4 substitution records under `substitution/functions/<fn_id>/`                              |
+| `git-check`                                                                           | Validate artifact YAML files are tracked or staged in git                                           |
+| `execution-log`                                                                       | Append and inspect execution records                                                                |
+| `progress`                                                                            | Compatibility helpers for legacy decompilation progress YAML                                        |
+| `gate`                                                                                | Run aggregate gate checks and inspect gate reports                                                  |
+| `ghidra`                                                                              | Discover Ghidra, import/analyze, export baseline, apply changes, decompile, rebuild                 |
+| `frida`                                                                               | Device, capture, compare, trace, run, and invoke helpers                                            |
+| `inspect`                                                                             | Read-only binary inspection helpers                                                                 |
+| `context`                                                                             | Active context helpers                                                                              |
+| `paths`                                                                               | Show resolved workspace/runtime paths                                                               |
+| `validate` / `help`                                                                   | Validation and help surfaces                                                                        |
 
 ## Workspace Model
 
@@ -141,22 +142,22 @@ artifacts.
 
 ## Artifact Semantics
 
-| Artifact | Meaning |
-|---|---|
-| `pipeline-state.yaml` | Current target, current phase, recorded binary path |
-| `scope.yaml` | Explicit scope mode and entry list |
-| `baseline/*.yaml` | Baseline metadata exported from Ghidra or curated through CLI commands |
-| `runtime/run-manifest.yaml` | P1 reproducible runtime manifest and run-record index |
-| `runtime/run-records/*.yaml` | P1 concrete executable or harness run observations |
-| `runtime/hotpaths/call-chain.yaml` | P1 Frida-derived hotpath call-chain priority source |
-| `third-party/identified.yaml` | Identified libraries, versions, evidence, source paths, pristine paths, and function classifications; `libraries: []` records an explicit no-third-party review |
-| `third-party/pristine/<library>@<version>/` | Unmodified third-party source snapshot that must remain pristine |
-| `third-party/compat/<library>@<version>/` | Compatibility modifications separate from pristine source |
-| `metadata/*.yaml` | P3 recovered names, signatures, types, constants, and strings before CLI-mediated Ghidra apply |
-| `metadata/apply-records/*.yaml` | P3 records for serialized metadata apply attempts |
-| `substitution/next-batch.yaml` | P4 substitution worklist |
-| `substitution/functions/<fn_id>/*.yaml` | P4 function fixtures, captures, substitution records, status, and follow-up data |
-| `gates/*-report.yaml` | Persisted gate check reports |
+| Artifact                                    | Meaning                                                                                                                                                         |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pipeline-state.yaml`                       | Current target, current phase, recorded binary path                                                                                                             |
+| `scope.yaml`                                | Explicit scope mode and entry list                                                                                                                              |
+| `baseline/*.yaml`                           | Baseline metadata exported from Ghidra or curated through CLI commands                                                                                          |
+| `runtime/run-manifest.yaml`                 | P1 reproducible runtime manifest and run-record index                                                                                                           |
+| `runtime/run-records/*.yaml`                | P1 concrete executable or harness run observations                                                                                                              |
+| `runtime/hotpaths/call-chain.yaml`          | P1 Frida-derived hotpath call-chain priority source                                                                                                             |
+| `third-party/identified.yaml`               | Identified libraries, versions, evidence, source paths, pristine paths, and function classifications; `libraries: []` records an explicit no-third-party review |
+| `third-party/pristine/<library>@<version>/` | Unmodified third-party source snapshot that must remain pristine                                                                                                |
+| `third-party/compat/<library>@<version>/`   | Compatibility modifications separate from pristine source                                                                                                       |
+| `metadata/*.yaml`                           | P3 recovered names, signatures, types, constants, and strings before CLI-mediated Ghidra apply                                                                  |
+| `metadata/apply-records/*.yaml`             | P3 records for serialized metadata apply attempts                                                                                                               |
+| `substitution/next-batch.yaml`              | P4 substitution worklist                                                                                                                                        |
+| `substitution/functions/<fn_id>/*.yaml`     | P4 function fixtures, captures, substitution records, status, and follow-up data                                                                                |
+| `gates/*-report.yaml`                       | Persisted gate check reports                                                                                                                                    |
 
 ## Output Contract
 

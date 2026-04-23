@@ -201,14 +201,10 @@ export function createLocalReleaseWorkspace(rootDir) {
       throw new Error(`Ghidra discovery script not found: ${discoverScript}`);
     }
 
-    const result = spawnSync(
-      "bash",
-      [discoverScript, "--print-install-dir"],
-      {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
+    const result = spawnSync("bash", [discoverScript, "--print-install-dir"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     if (result.status !== 0) {
       const stderr = result.stderr?.trim() || "unknown error";
       throw new Error(
@@ -249,14 +245,10 @@ export function createLocalReleaseWorkspace(rootDir) {
       },
     );
     if (result.error) {
-      throw new Error(
-        `script bundle build failed: ${result.error.message}`,
-      );
+      throw new Error(`script bundle build failed: ${result.error.message}`);
     }
     if (result.status !== 0) {
-      throw new Error(
-        `script bundle build failed (exit ${result.status}).`,
-      );
+      throw new Error(`script bundle build failed (exit ${result.status}).`);
     }
   }
 
@@ -285,6 +277,9 @@ export function createLocalReleaseWorkspace(rootDir) {
         // Match release CI: serialise Linux/musl builds to avoid an OpenSSL
         // provider archive race in vendored openssl-src.
         buildEnv.CARGO_BUILD_JOBS = "1";
+        // Match release CI: force libz-sys onto its bundled static zlib path.
+        buildEnv.LIBZ_SYS_STATIC = "1";
+        buildEnv.ZLIB_NO_PKG_CONFIG = "1";
       }
       if (isWindows) {
         const homeDir = process.env.HOME || process.env.USERPROFILE;
@@ -303,7 +298,12 @@ export function createLocalReleaseWorkspace(rootDir) {
         );
       }
 
-      const src = path.join(isolatedTargetDir, rustTarget, "release", binaryName);
+      const src = path.join(
+        isolatedTargetDir,
+        rustTarget,
+        "release",
+        binaryName,
+      );
       if (!existsSync(src)) {
         throw new Error(`Built binary not found at ${src}.`);
       }
@@ -342,7 +342,9 @@ export function createLocalReleaseWorkspace(rootDir) {
     }
 
     writeFileSync(cargoTomlPath, cargoLines.join("\n"), "utf8");
-    console.log(`Staged Cargo.toml version ${version} for local release build.`);
+    console.log(
+      `Staged Cargo.toml version ${version} for local release build.`,
+    );
 
     const lockResult = spawnSync("cargo", ["generate-lockfile"], {
       stdio: "inherit",

@@ -7,10 +7,10 @@
  *
  * Output: JSON lines to stdout, one per function call.
  */
-'use strict';
+"use strict";
 
-const targetAddr = ptr(Process.argv[0] || '0x0');
-const numArgs = parseInt(Process.argv[1] || '0', 10);
+const targetAddr = ptr(Process.argv[0] || "0x0");
+const numArgs = parseInt(Process.argv[1] || "0", 10);
 
 const recordings = [];
 let callIndex = 0;
@@ -35,8 +35,8 @@ Interceptor.attach(targetAddr, {
       return_value_int: retval.toInt32(),
     };
     recordings.push(record);
-    send({ type: 'io_capture', data: record });
-  }
+    send({ type: "io_capture", data: record });
+  },
 });
 
 // Flush all recordings on detach
@@ -46,5 +46,5 @@ rpc.exports = {
   },
   getRecordingCount() {
     return recordings.length;
-  }
+  },
 };

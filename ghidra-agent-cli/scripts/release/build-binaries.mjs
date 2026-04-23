@@ -7,12 +7,14 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   rmSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,14 +45,10 @@ function resolveGhidraInstallDir() {
     throw new Error(`Ghidra discovery script not found at ${discoverScript}.`);
   }
 
-  const result = spawnSync(
-    "bash",
-    [discoverScript, "--print-install-dir"],
-    {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  const result = spawnSync("bash", [discoverScript, "--print-install-dir"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   if (result.status !== 0) {
     const stderr = result.stderr?.trim() || "unknown error";
     throw new Error(
@@ -91,14 +89,10 @@ function buildGhidraScriptBundle(distDir) {
     },
   );
   if (result.error) {
-    throw new Error(
-      `script bundle build failed: ${result.error.message}`,
-    );
+    throw new Error(`script bundle build failed: ${result.error.message}`);
   }
   if (result.status !== 0) {
-    throw new Error(
-      `script bundle build failed (exit ${result.status}).`,
-    );
+    throw new Error(`script bundle build failed (exit ${result.status}).`);
   }
 }
 
@@ -146,65 +140,81 @@ if (lockResult.status !== 0) {
 
 // --- Build all targets and create archives ---
 const distDir = path.join(rootDir, "dist");
+const isolatedTargetDir = mkdtempSync(
+  path.join(tmpdir(), "ghidra-agent-cli-release-target-"),
+);
 mkdirSync(distDir, { recursive: true });
 buildGhidraScriptBundle(distDir);
 
-for (const target of config.targets) {
-  const rt = target.rustTarget;
-  const isWindows = rt.includes("windows");
-  const isLinux = rt.includes("linux");
-  const binaryName = `${cliName}${isWindows ? ".exe" : ""}`;
+try {
+  for (const target of config.targets) {
+    const rt = target.rustTarget;
+    const isWindows = rt.includes("windows");
+    const isLinux = rt.includes("linux");
+    const binaryName = `${cliName}${isWindows ? ".exe" : ""}`;
 
-  console.log(`Building ${rt}...`);
-  const buildArgs = isLinux
-    ? ["zigbuild", "--release", "--target", rt]
-    : ["build", "--release", "--target", rt];
-  const buildEnv = { ...process.env };
-  if (isLinux) {
-    // openssl-src forwards Cargo's jobserver to `make build_libs`; OpenSSL
-    // 3.6.x can race while producing providers/liblegacy.a under musl
-    // cross-builds, so keep Linux release builds serial for stability.
-    buildEnv.CARGO_BUILD_JOBS = "1";
-  }
+    console.log(`Building ${rt}...`);
+    const buildArgs = isLinux
+      ? ["zigbuild", "--release", "--target", rt]
+      : ["build", "--release", "--target", rt];
+    const buildEnv = {
+      ...process.env,
+      CARGO_TARGET_DIR: isolatedTargetDir,
+    };
+    if (isLinux) {
+      // Keep CI release builds away from restored target/ cache state; the
+      // Linux native dependency builds are sensitive to stale partial archives.
+      // OpenSSL also forwards Cargo's jobserver into make, so serialise musl
+      // release builds for deterministic provider archive creation.
+      buildEnv.CARGO_BUILD_JOBS = "1";
+      // libgit2 pulls in libz-sys. For musl cross-builds on macOS, probing a
+      // dynamic system zlib can fail inside cargo-zigbuild's wrappers before
+      // libz-sys falls back cleanly, so force its bundled static zlib path.
+      buildEnv.LIBZ_SYS_STATIC = "1";
+      buildEnv.ZLIB_NO_PKG_CONFIG = "1";
+    }
 
-  const result = spawnSync("cargo", buildArgs, {
-    stdio: "inherit",
-    env: buildEnv,
-    shell: true,
-  });
-  if (result.error) {
-    throw new Error(`cargo build failed for ${rt}: ${result.error.message}`);
-  }
-  if (result.status !== 0) {
-    throw new Error(`cargo build failed for ${rt} (exit ${result.status}).`);
-  }
+    const result = spawnSync("cargo", buildArgs, {
+      stdio: "inherit",
+      env: buildEnv,
+      shell: true,
+    });
+    if (result.error) {
+      throw new Error(`cargo build failed for ${rt}: ${result.error.message}`);
+    }
+    if (result.status !== 0) {
+      throw new Error(`cargo build failed for ${rt} (exit ${result.status}).`);
+    }
 
-  const src = path.join(rootDir, "target", rt, "release", binaryName);
-  if (!existsSync(src)) {
-    throw new Error(`Built binary not found at ${src}.`);
-  }
+    const src = path.join(isolatedTargetDir, rt, "release", binaryName);
+    if (!existsSync(src)) {
+      throw new Error(`Built binary not found at ${src}.`);
+    }
 
-  const outDir = path.join(distDir, rt);
-  mkdirSync(outDir, { recursive: true });
-  copyFileSync(src, path.join(outDir, binaryName));
+    const outDir = path.join(distDir, rt);
+    mkdirSync(outDir, { recursive: true });
+    copyFileSync(src, path.join(outDir, binaryName));
 
-  const archiveName = `${cliName}-${rt}.tar.gz`;
-  const archivePath = path.join(distDir, archiveName);
-  const tar = spawnSync(
-    "tar",
-    ["-czf", archivePath, "-C", outDir, binaryName],
-    { stdio: "pipe" },
-  );
-  if (tar.error || tar.status !== 0) {
-    throw new Error(
-      `tar failed for ${archiveName}: ${tar.error?.message ?? `exit ${tar.status}`}`,
+    const archiveName = `${cliName}-${rt}.tar.gz`;
+    const archivePath = path.join(distDir, archiveName);
+    const tar = spawnSync(
+      "tar",
+      ["-czf", archivePath, "-C", outDir, binaryName],
+      { stdio: "pipe" },
     );
-  }
-  const archiveBuf = readFileSync(archivePath);
-  const hash = createHash("sha256").update(archiveBuf).digest("hex");
-  writeFileSync(`${archivePath}.sha256`, `${hash}  ${archiveName}\n`, "utf8");
+    if (tar.error || tar.status !== 0) {
+      throw new Error(
+        `tar failed for ${archiveName}: ${tar.error?.message ?? `exit ${tar.status}`}`,
+      );
+    }
+    const archiveBuf = readFileSync(archivePath);
+    const hash = createHash("sha256").update(archiveBuf).digest("hex");
+    writeFileSync(`${archivePath}.sha256`, `${hash}  ${archiveName}\n`, "utf8");
 
-  console.log(`  -> ${archivePath}`);
+    console.log(`  -> ${archivePath}`);
+  }
+} finally {
+  rmSync(isolatedTargetDir, { recursive: true, force: true });
 }
 
 console.log(`Built ${config.targets.length} targets for v${version}.`);

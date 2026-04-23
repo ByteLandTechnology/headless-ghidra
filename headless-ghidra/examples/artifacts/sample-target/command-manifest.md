@@ -610,7 +610,7 @@ Review these failure paths explicitly:
 - `comparison-command-log.md` is the required reproducibility surface for
   target-specific compare commands until a generic wrapper exists.
 - `decompilation-record.yaml` must record `decompilation_backend:
-  ghidra_headless` and `decompilation_action: decompile-selected`.
+ghidra_headless` and `decompilation_action: decompile-selected`.
 - Run actions for the same `target-id` sequentially. Parallel headless runs can
   fail with a Ghidra project lock before the Java scripts begin.
 - The sample replay surface remains useful because it defines the exact command

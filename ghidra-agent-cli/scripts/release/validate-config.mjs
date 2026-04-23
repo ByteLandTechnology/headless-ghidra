@@ -7,7 +7,7 @@
 // Called from release.yml "Verify release config" step and from
 // sync-platform-packages.mjs so both locations use identical logic.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -50,7 +50,8 @@ function validateScopeString(fieldName, value) {
 // --- Required fields ---
 for (const field of ["cliName", "mainPackageName", "sourceRepository"]) {
   const value =
-    rawConfig[field] ?? (field === "mainPackageName" ? rawConfig.packageName : null);
+    rawConfig[field] ??
+    (field === "mainPackageName" ? rawConfig.packageName : null);
   if (!value || /REPLACE_WITH_/.test(String(value))) {
     fail(
       `release/config.json#${field} must be set (found ${JSON.stringify(value)}).`,
@@ -120,9 +121,26 @@ if (existsSync(mainPkgPath)) {
   console.log(`Main package OK: ${pkg.name}`);
 }
 
+// --- Platform package manifests must not expose CLI bins ---
+// Only npm/main should publish the command shim. Platform packages are runtime
+// payloads resolved by that shim; a bin field can let npm .bin shadow the shim
+// with the native binary and bypass wrapper-provided environment setup.
+const platformsDir = path.join(rootDir, "npm/platforms");
+if (existsSync(platformsDir)) {
+  for (const entry of readdirSync(platformsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const platformPkgPath = path.join(platformsDir, entry.name, "package.json");
+    if (!existsSync(platformPkgPath)) continue;
+    const pkg = JSON.parse(readFileSync(platformPkgPath, "utf8"));
+    if (Object.prototype.hasOwnProperty.call(pkg, "bin")) {
+      fail(
+        `${path.relative(rootDir, platformPkgPath)} must not define a bin field. Platform packages are runtime-only; npm/main exposes the CLI command.`,
+      );
+    }
+  }
+}
+
 console.log(
   `Config OK: main=${buildMainPackageName(config)} platformScope=${JSON.stringify(config.platformNpmScope)} repo=${config.sourceRepository}`,
 );
-console.log(
-  `Derived platform packages: ${derivedPlatformPackages.join(", ")}`,
-);
+console.log(`Derived platform packages: ${derivedPlatformPackages.join(", ")}`);

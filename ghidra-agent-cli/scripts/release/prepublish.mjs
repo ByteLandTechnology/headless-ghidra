@@ -35,11 +35,15 @@ function validateConfigNow() {
 }
 
 function registryHasVersion(pkgName, pkgVersion) {
-  const result = spawnSync("npm", ["view", `${pkgName}@${pkgVersion}`, "version"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    shell: true,
-  });
+  const result = spawnSync(
+    "npm",
+    ["view", `${pkgName}@${pkgVersion}`, "version"],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: true,
+    },
+  );
   if (result.status === 0) {
     return result.stdout.trim() === pkgVersion;
   }
@@ -68,7 +72,9 @@ function choosePrepublishVersion(packageNames) {
 
   for (let n = 1; n < 10_000; n += 1) {
     const candidate = `0.0.0-prepublish.${n}`;
-    if (packageNames.every((pkgName) => !registryHasVersion(pkgName, candidate))) {
+    if (
+      packageNames.every((pkgName) => !registryHasVersion(pkgName, candidate))
+    ) {
       return candidate;
     }
   }
@@ -100,11 +106,15 @@ function publishPackage(pkgDir, label, version) {
     );
   }
 
-  const result = spawnSync("npm", ["publish", "--access=public", "--tag", "prepublish"], {
-    cwd: pkgDir,
-    stdio: "inherit",
-    shell: true,
-  });
+  const result = spawnSync(
+    "npm",
+    ["publish", "--access=public", "--tag", "prepublish"],
+    {
+      cwd: pkgDir,
+      stdio: "inherit",
+      shell: true,
+    },
+  );
   if (result.status !== 0) {
     throw new Error(
       `npm publish failed for ${label} package ${pkgName}@${version} (exit ${result.status}).`,

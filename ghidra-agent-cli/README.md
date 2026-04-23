@@ -16,9 +16,11 @@ run publishes the production release surfaces:
 
 1. git tag `v<version>` + GitHub Release page (archive + sha256 per target)
 2. **N platform npm packages** (`<name>-darwin-arm64`, `<name>-linux-x64`, ...)
-   each carrying only the matching native binary, gated by `os` / `cpu`
+   each carrying only the matching native binary, gated by `os` / `cpu`; these
+   packages are runtime-only and do not expose a `bin` command
 3. **1 main npm package** (`<name>`) — a tiny JS shim whose
-   `optionalDependencies` pin every platform package to the same version
+   `optionalDependencies` pin every platform package to the same version and
+   whose `bin` field is the only published CLI entry point
 4. `CHANGELOG.md` entry
 5. `chore(release): <version> [skip ci]` commit (`CHANGELOG.md`,
    `Cargo.toml`, `Cargo.lock`, `npm/main/package.json`)
@@ -48,6 +50,8 @@ package automatically. No postinstall download.
    `release/config.json`. You may pre-fill it for local testing, but
    `sync-platform-packages.mjs` will overwrite `name`, `version`, `bin`, and
    `optionalDependencies` from the authoritative config during `prepare`.
+   Generated platform package manifests intentionally omit `bin`; their native
+   binaries stay under `bin/` so the main shim can resolve and launch them.
 5. Configure npm trusted publishing on npmjs.com for this repository's
    `release.yml`:
    - configure a publisher entry for the main package and for **each** platform
@@ -138,8 +142,8 @@ restored to these dot-prefixed names when the asset pack is adopted.
 - `scripts/release/build-binaries.mjs` — semantic-release `prepare` hook that bumps
   `Cargo.toml#version`, builds all targets, and creates dist archives + provenance
 - `scripts/release/validate-config.mjs` — shared config validation (fields, split-scope
-  consistency, repository match, placeholder check); called by release.yml and
-  sync-platform-packages.mjs
+  consistency, repository match, placeholder check, platform runtime-only
+  manifests); called by release.yml and sync-platform-packages.mjs
 - `scripts/release/sync-platform-packages.mjs` — semantic-release `prepare` hook
 - `scripts/release/publish-npm-packages.mjs` — semantic-release `publish` hook
   that publishes every platform package and the main package, each guarded by

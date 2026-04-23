@@ -14,10 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  buildMainPackageName,
-  readReleaseConfig,
-} from "./release-config.mjs";
+import { buildMainPackageName, readReleaseConfig } from "./release-config.mjs";
 
 const rootDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

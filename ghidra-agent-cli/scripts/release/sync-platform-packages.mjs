@@ -3,7 +3,7 @@
 // authoritative source for CLI name, main package name, and npm scope.
 //
 // For each configured target:
-//   - materialize npm/platforms/<pkg-suffix>/ with name, os, cpu, bin, version
+//   - materialize npm/platforms/<pkg-suffix>/ with name, os, cpu, version
 //   - copy the prebuilt binary from dist/<rustTarget>/ into the platform package
 // Then rewrites npm/main/package.json so its name / bin / optionalDependencies
 // are derived from release/config.json, with hard failure on scope mismatch.
@@ -108,9 +108,10 @@ function assertMainPackageBundlesScripts(mainPkgDir) {
       );
     }
 
-    const files = Array.isArray(packOutput) && packOutput.length > 0
-      ? packOutput[0].files ?? []
-      : [];
+    const files =
+      Array.isArray(packOutput) && packOutput.length > 0
+        ? (packOutput[0].files ?? [])
+        : [];
     const packedPaths = new Set(files.map((entry) => entry.path));
     for (const relPath of [
       `ghidra-script-bundle/${BUNDLED_ENTRY_SCRIPT}`,
@@ -125,6 +126,15 @@ function assertMainPackageBundlesScripts(mainPkgDir) {
     }
   } finally {
     rmSync(npmCacheDir, { recursive: true, force: true });
+  }
+}
+
+function assertPlatformPackageIsRuntimeOnly(pkgManifest, pkgDir) {
+  if (Object.prototype.hasOwnProperty.call(pkgManifest, "bin")) {
+    throw new Error(
+      `Platform package ${pkgManifest.name} at ${pkgDir} must not define a bin field. ` +
+        "Only npm/main exposes the CLI command wrapper.",
+    );
   }
 }
 
@@ -153,7 +163,6 @@ for (const target of config.targets) {
     license: mainPkg.license ?? "UNLICENSED",
     os: [target.os],
     cpu: [target.cpu],
-    bin: { [cliName]: `bin/${binaryBaseName}` },
     files: ["bin/"],
     publishConfig: mainPkg.publishConfig ?? {
       access: "public",
@@ -161,6 +170,7 @@ for (const target of config.targets) {
     },
     repository: { type: "git", url: repoUrl },
   };
+  assertPlatformPackageIsRuntimeOnly(pkgManifest, pkgDir);
   writeFileSync(
     path.join(pkgDir, "package.json"),
     `${JSON.stringify(pkgManifest, null, 2)}\n`,
@@ -197,9 +207,7 @@ if (existsSync(srcBundleDir)) {
   cpSync(srcBundleDir, dstBundleDir, { recursive: true });
   console.log("Copied ghidra-script-bundle/ into npm/main/.");
 } else {
-  throw new Error(
-    `Missing prebuilt Ghidra script bundle: ${srcBundleDir}`,
-  );
+  throw new Error(`Missing prebuilt Ghidra script bundle: ${srcBundleDir}`);
 }
 
 // Fill npm/main/README.md placeholders

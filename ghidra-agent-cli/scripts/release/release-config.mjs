@@ -130,7 +130,9 @@ export function buildPlatformPackageName(config, target) {
 }
 
 export function buildPlatformPackageNames(config) {
-  return config.targets.map((target) => buildPlatformPackageName(config, target));
+  return config.targets.map((target) =>
+    buildPlatformPackageName(config, target),
+  );
 }
 
 export function buildAllPackageNames(config) {

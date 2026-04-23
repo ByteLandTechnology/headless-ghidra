@@ -31,13 +31,13 @@ remains the tool authority for command syntax and YAML artifact semantics.
 P0 Intake → P1 Baseline+Runtime → P2 Third-Party → [P3 Metadata Enrichment → P4 Function Substitution]*
 ```
 
-| Phase | Skill | Purpose | Primary outputs |
-|---|---|---|---|
-| P0 | [`headless-ghidra-intake`](../headless-ghidra-intake/SKILL.md) | Initialize target workspace, discover prerequisites, and define scope | `pipeline-state.yaml`, `scope.yaml`, `targets/<id>/ghidra-projects/` |
-| P1 | [`headless-ghidra-baseline`](../headless-ghidra-baseline/SKILL.md) | Run Ghidra import/analysis, export baseline YAML, and prepare runtime observations | `baseline/*.yaml`, `runtime/run-manifest.yaml`, `runtime/run-records/*.yaml`, `runtime/hotpaths/call-chain.yaml` |
-| P2 | [`headless-ghidra-evidence`](../headless-ghidra-evidence/SKILL.md) | Identify and record third-party libraries and pristine sources | `third-party/identified.yaml`, `third-party/pristine/<library>@<version>/`, `third-party/compat/<library>@<version>/` |
-| P3 | [`headless-ghidra-discovery`](../headless-ghidra-discovery/SKILL.md) | Enrich names, signatures, types, constants, strings, and selected hotpath metadata | `metadata/*.yaml`, `metadata/apply-records/` |
-| P4 | [`headless-ghidra-batch-decompile`](../headless-ghidra-batch-decompile/SKILL.md) | Substitute selected functions through metadata application and Ghidra decompilation | `substitution/next-batch.yaml`, `substitution/functions/<fn_id>/` |
+| Phase | Skill                                                                            | Purpose                                                                             | Primary outputs                                                                                                       |
+| ----- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| P0    | [`headless-ghidra-intake`](../headless-ghidra-intake/SKILL.md)                   | Initialize target workspace, discover prerequisites, and define scope               | `pipeline-state.yaml`, `scope.yaml`, `targets/<id>/ghidra-projects/`                                                  |
+| P1    | [`headless-ghidra-baseline`](../headless-ghidra-baseline/SKILL.md)               | Run Ghidra import/analysis, export baseline YAML, and prepare runtime observations  | `baseline/*.yaml`, `runtime/run-manifest.yaml`, `runtime/run-records/*.yaml`, `runtime/hotpaths/call-chain.yaml`      |
+| P2    | [`headless-ghidra-evidence`](../headless-ghidra-evidence/SKILL.md)               | Identify and record third-party libraries and pristine sources                      | `third-party/identified.yaml`, `third-party/pristine/<library>@<version>/`, `third-party/compat/<library>@<version>/` |
+| P3    | [`headless-ghidra-discovery`](../headless-ghidra-discovery/SKILL.md)             | Enrich names, signatures, types, constants, strings, and selected hotpath metadata  | `metadata/*.yaml`, `metadata/apply-records/`                                                                          |
+| P4    | [`headless-ghidra-batch-decompile`](../headless-ghidra-batch-decompile/SKILL.md) | Substitute selected functions through metadata application and Ghidra decompilation | `substitution/next-batch.yaml`, `substitution/functions/<fn_id>/`                                                     |
 
 Deprecated compatibility-only aliases:
 

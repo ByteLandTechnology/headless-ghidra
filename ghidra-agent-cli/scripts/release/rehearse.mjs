@@ -22,10 +22,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  buildMainPackageName,
-  readReleaseConfig,
-} from "./release-config.mjs";
+import { buildMainPackageName, readReleaseConfig } from "./release-config.mjs";
 import { createLocalReleaseWorkspace } from "./local-build-utils.mjs";
 
 const rootDir = path.resolve(

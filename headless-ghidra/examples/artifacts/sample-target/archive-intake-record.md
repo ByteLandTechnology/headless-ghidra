@@ -15,17 +15,17 @@
 
 ## Current Review Record
 
-| Field                      | Value                                                                                              | Review Notes                                                                            |
-| -------------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `archive_id`               | `sample-target`                                                                                    | Stable identifier for this normalization review set.                                    |
-| `archive_path`             | `.work/ghidra-artifacts/archive-normalization-smoke-20260330/libsample.a`                          | Local smoke-test archive used to validate the wrapper surface.                          |
-| `provenance_notes`         | `local_archive_input`, `reviewed_local_smoke_archive`                                              | Review the caller-provided archive path and local file metadata before deeper analysis. |
-| `direct_import_status`     | `blocked_requires_normalization`                                                                   | The raw archive is not treated as the downstream Ghidra program target.                 |
-| `archive_observation`      | `current ar archive`                                                                               | Captured from the local `file` observation during replay.                               |
-| `normalization_wrapper_id` | `normalize-ar-archive`                                                                             | Canonical wrapper entrypoint for archive normalization.                                 |
-| `runtime_artifact_root`    | `.work/ghidra-artifacts/sample-target-archive-runtime/`                                            | Runtime-generated members and review outputs stay under `.work/`.                       |
-| `replay_record_path`       | `<installed-skill-root>/examples/artifacts/sample-target/archive-replay-command-record.md`         | Use the tracked sample replay record to rerun the same normalization pass.              |
-| `overall_status`           | `members_ready`                                                                                    | Must match the handoff summary and any stop condition.                                  |
+| Field                      | Value                                                                                      | Review Notes                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `archive_id`               | `sample-target`                                                                            | Stable identifier for this normalization review set.                                    |
+| `archive_path`             | `.work/ghidra-artifacts/archive-normalization-smoke-20260330/libsample.a`                  | Local smoke-test archive used to validate the wrapper surface.                          |
+| `provenance_notes`         | `local_archive_input`, `reviewed_local_smoke_archive`                                      | Review the caller-provided archive path and local file metadata before deeper analysis. |
+| `direct_import_status`     | `blocked_requires_normalization`                                                           | The raw archive is not treated as the downstream Ghidra program target.                 |
+| `archive_observation`      | `current ar archive`                                                                       | Captured from the local `file` observation during replay.                               |
+| `normalization_wrapper_id` | `normalize-ar-archive`                                                                     | Canonical wrapper entrypoint for archive normalization.                                 |
+| `runtime_artifact_root`    | `.work/ghidra-artifacts/sample-target-archive-runtime/`                                    | Runtime-generated members and review outputs stay under `.work/`.                       |
+| `replay_record_path`       | `<installed-skill-root>/examples/artifacts/sample-target/archive-replay-command-record.md` | Use the tracked sample replay record to rerun the same normalization pass.              |
+| `overall_status`           | `members_ready`                                                                            | Must match the handoff summary and any stop condition.                                  |
 
 ## Recognition Evidence
 
