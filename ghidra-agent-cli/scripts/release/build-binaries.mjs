@@ -159,9 +159,17 @@ for (const target of config.targets) {
   const buildArgs = isLinux
     ? ["zigbuild", "--release", "--target", rt]
     : ["build", "--release", "--target", rt];
+  const buildEnv = { ...process.env };
+  if (isLinux) {
+    // openssl-src forwards Cargo's jobserver to `make build_libs`; OpenSSL
+    // 3.6.x can race while producing providers/liblegacy.a under musl
+    // cross-builds, so keep Linux release builds serial for stability.
+    buildEnv.CARGO_BUILD_JOBS = "1";
+  }
 
   const result = spawnSync("cargo", buildArgs, {
     stdio: "inherit",
+    env: buildEnv,
     shell: true,
   });
   if (result.error) {

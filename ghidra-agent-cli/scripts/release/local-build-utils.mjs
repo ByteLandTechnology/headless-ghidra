@@ -281,6 +281,11 @@ export function createLocalReleaseWorkspace(rootDir) {
       }
 
       const buildEnv = { ...process.env, CARGO_TARGET_DIR: isolatedTargetDir };
+      if (isLinux) {
+        // Match release CI: serialise Linux/musl builds to avoid an OpenSSL
+        // provider archive race in vendored openssl-src.
+        buildEnv.CARGO_BUILD_JOBS = "1";
+      }
       if (isWindows) {
         const homeDir = process.env.HOME || process.env.USERPROFILE;
         const llvmMingwBin = path.join(homeDir, "llvm-mingw", "bin");
