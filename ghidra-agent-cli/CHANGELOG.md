@@ -1,3 +1,9 @@
+## [1.4.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.3.0...v1.4.0) (2026-04-23)
+
+### Features
+
+* **ghidra-agent-cli:** add analyze-vtables command ([73d4983](https://github.com/ByteLandTechnology/headless-ghidra/commit/73d4983d2e5505d37386148ae7005e517e500a91))
+
 ## [1.3.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.2.0...v1.3.0) (2026-04-22)
 
 ### Features
