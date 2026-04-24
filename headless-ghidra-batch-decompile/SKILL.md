@@ -22,8 +22,8 @@ artifacts.
 - `ghidra-agent-cli substitute validate`
 - `ghidra-agent-cli gate check --phase P4`
 
-Queueing via `ghidra-queue.sh` and Java/headless helpers remains a backend
-detail. The public workflow surface is the CLI plus the YAML outputs below.
+Locking and Ghidra invocation are handled internally by the CLI.
+The public workflow surface is the CLI plus the YAML outputs below.
 When `substitution/next-batch.yaml` is ready, process only functions with
 clear P3 names and signatures.
 
