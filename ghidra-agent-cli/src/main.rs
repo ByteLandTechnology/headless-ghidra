@@ -1043,7 +1043,8 @@ pub struct GateShowArgs {
 // ---------------------------------------------------------------------------
 // Container: ghidra -> { discover, import, auto-analyze, export-baseline,
 //                        analyze-vtables, apply-renames, verify-renames,
-//                        apply-signatures, verify-signatures, decompile,
+//                        apply-signatures, verify-signatures,
+//                        import-types-and-signatures, decompile,
 //                        rebuild-project }
 // ---------------------------------------------------------------------------
 #[derive(Subcommand, Debug)]
@@ -1057,6 +1058,7 @@ pub enum GhidraCmd {
     VerifyRenames(GhidraVerifyRenamesArgs),
     ApplySignatures(GhidraApplySignaturesArgs),
     VerifySignatures(GhidraVerifySignaturesArgs),
+    ImportTypesAndSignatures(GhidraImportTypesAndSignaturesArgs),
     Decompile(GhidraDecompileArgs),
     RebuildProject(GhidraRebuildProjectArgs),
 }
@@ -1123,12 +1125,28 @@ pub struct GhidraVerifyRenamesArgs {
 pub struct GhidraApplySignaturesArgs {
     #[arg(long)]
     pub target: Option<String>,
+    #[arg(long)]
+    pub rename_from_signature: bool,
 }
 
 #[derive(Args, Debug)]
 pub struct GhidraVerifySignaturesArgs {
     #[arg(long)]
     pub target: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct GhidraImportTypesAndSignaturesArgs {
+    #[arg(long)]
+    pub target: Option<String>,
+    #[arg(long, required = true)]
+    pub header: Vec<PathBuf>,
+    #[arg(long = "include-dir")]
+    pub include_dir: Vec<PathBuf>,
+    #[arg(long)]
+    pub signatures: Option<PathBuf>,
+    #[arg(long)]
+    pub program: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -1458,6 +1476,7 @@ EXAMPLES
     ghidra-agent-cli workspace init --target libfoo --binary ./libfoo.so
     ghidra-agent-cli --target libfoo gate check --phase P1
     ghidra-agent-cli --target libfoo functions list
+    ghidra-agent-cli --target libfoo ghidra import-types-and-signatures --header ./include/custom_types.h --header ./include/custom_api.h
     ghidra-agent-cli --target libfoo ghidra decompile --fn-id fn_001 --addr 0x401000
     ghidra-agent-cli paths
     ghidra-agent-cli help gate check
@@ -3780,13 +3799,18 @@ fn exec_ghidra_apply_signatures(
         .and_then(|n| n.to_str())
         .ok_or_else(|| anyhow!("invalid binary path '{}'", binary_path))?;
 
+    let mut script_args = Vec::new();
+    if args.rename_from_signature {
+        script_args.push("--rename-from-signature");
+    }
+
     ghidra::run_headless_with_program(
         &ws,
         &ghidra_dir,
         &project_dir,
         &target,
         "ApplySignatures.java",
-        &[],
+        &script_args,
         Some(binary_name),
     )?;
     let out = ok_output(&format!("signatures applied for target '{}'", target));
@@ -3822,6 +3846,103 @@ fn exec_ghidra_verify_signatures(
         Some(binary_name),
     )?;
     let out = ok_output(&format!("signatures verified for target '{}'", target));
+    serialize_value(&mut std::io::stdout(), &out, fmt)?;
+    Ok(EXIT_SUCCESS)
+}
+
+fn exec_ghidra_import_types_and_signatures(
+    cli: &Cli,
+    args: &GhidraImportTypesAndSignaturesArgs,
+    fmt: Format,
+) -> Result<i32> {
+    let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+    let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+    let ghidra_dir = ghidra::discover_ghidra(None)?;
+    let project_dir = ghidra::ghidra_projects_dir(&ws, &target);
+    if args.header.is_empty() {
+        return Err(anyhow!(
+            "at least one --header path is required for import-types-and-signatures"
+        ));
+    }
+
+    let program_name = if let Some(program) = args.program.as_deref() {
+        program.to_string()
+    } else {
+        decompile_binary_name(&ws, &target)?
+    };
+    let default_signatures_path = workspace::artifact_dir(&ws, &target)
+        .join("metadata")
+        .join("signatures.yaml");
+    let signatures_path = args.signatures.clone().or_else(|| {
+        default_signatures_path
+            .is_file()
+            .then_some(default_signatures_path)
+    });
+    let mut script_args =
+        Vec::with_capacity(args.header.len() * 2 + args.include_dir.len() * 2 + 2);
+    for header in &args.header {
+        script_args.push("--header".to_string());
+        script_args.push(header.to_string_lossy().into_owned());
+    }
+    for include_dir in &args.include_dir {
+        script_args.push("--include-dir".to_string());
+        script_args.push(include_dir.to_string_lossy().into_owned());
+    }
+    if let Some(path) = &signatures_path {
+        script_args.push("--signatures".to_string());
+        script_args.push(path.to_string_lossy().into_owned());
+    }
+    let extra_args: Vec<&str> = script_args.iter().map(String::as_str).collect();
+
+    ghidra::run_headless_with_program(
+        &ws,
+        &ghidra_dir,
+        &project_dir,
+        &target,
+        "ImportTypesAndSignatures.java",
+        &extra_args,
+        Some(&program_name),
+    )?;
+
+    let mut data = serde_yaml::Mapping::new();
+    data.insert(
+        serde_yaml::Value::String("script".into()),
+        serde_yaml::Value::String("ImportTypesAndSignatures.java".into()),
+    );
+    data.insert(
+        serde_yaml::Value::String("headers".into()),
+        serde_yaml::to_value(
+            args.header
+                .iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+        )?,
+    );
+    data.insert(
+        serde_yaml::Value::String("program".into()),
+        serde_yaml::Value::String(program_name.clone()),
+    );
+    data.insert(
+        serde_yaml::Value::String("include_dirs".into()),
+        serde_yaml::to_value(
+            args.include_dir
+                .iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+        )?,
+    );
+    data.insert(
+        serde_yaml::Value::String("signatures".into()),
+        match &signatures_path {
+            Some(path) => serde_yaml::Value::String(path.to_string_lossy().into_owned()),
+            None => serde_yaml::Value::Null,
+        },
+    );
+
+    let out = ok_output_with_data(
+        &format!("types and signatures imported for target '{}'", target),
+        serde_yaml::Value::Mapping(data),
+    );
     serialize_value(&mut std::io::stdout(), &out, fmt)?;
     Ok(EXIT_SUCCESS)
 }
@@ -4846,6 +4967,13 @@ fn dispatch(cli: &Cli, command: &Commands, fmt: Format) -> Result<i32> {
             let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
             with_lock(&ws, Some(&target), "ghidra", || {
                 exec_ghidra_verify_signatures(cli, args, fmt)
+            })
+        }
+        Commands::Ghidra(GhidraCmd::ImportTypesAndSignatures(args)) => {
+            let ws = resolve_workspace(cli.workspace.as_ref(), cli.workspace.as_ref())?;
+            let target = resolve_target(args.target.as_ref(), cli.target.as_ref())?;
+            with_lock(&ws, Some(&target), "ghidra", || {
+                exec_ghidra_import_types_and_signatures(cli, args, fmt)
             })
         }
         Commands::Ghidra(GhidraCmd::Decompile(args)) => {

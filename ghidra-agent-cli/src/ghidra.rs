@@ -1,4 +1,5 @@
 use anyhow::{Result, anyhow};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const BUNDLED_ENTRY_SCRIPT_NAME: &str = "GhidraAgentCliEntry.java";
@@ -12,6 +13,7 @@ const BUNDLED_SCRIPT_NAMES: &[&str] = &[
     "ExportBaseline.java",
     "ExportCallGraph.java",
     "IdentifyLibraries.java",
+    "ImportTypesAndSignatures.java",
     "ImportBinary.java",
     "LintReviewArtifacts.java",
     "RebuildProject.java",
@@ -317,12 +319,20 @@ fn run_headless_impl(
     cmd.arg("-scriptPath");
     cmd.arg(&scripts_dir);
 
-    let status = cmd.status()?;
-    if !status.success() {
+    let output = cmd.output()?;
+    std::io::stdout().write_all(&output.stdout)?;
+    std::io::stderr().write_all(&output.stderr)?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let ghidra_reported_script_error =
+        stdout.contains("SCRIPT ERROR") || stderr.contains("SCRIPT ERROR");
+
+    if !output.status.success() || ghidra_reported_script_error {
         return Err(anyhow!(
             "Ghidra headless script {} failed with status {}",
             post_script,
-            status
+            output.status
         ));
     }
     Ok(())

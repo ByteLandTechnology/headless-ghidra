@@ -161,6 +161,7 @@ logical_script=""
 collect_args=0
 workspace=""
 target=""
+program=""
 addr=""
 fn_id=""
 min_entries=""
@@ -171,14 +172,24 @@ min_score=""
 write_baseline=""
 overwrite=""
 report_path=""
+extra_args=""
 prev=""
 
 for arg in "$@"; do
+  if [ "$prev" = "-process" ]; then
+    program="$arg"
+    prev=""
+    continue
+  fi
   if [ "$prev" = "-postScript" ]; then
     script="$arg"
     script="${script##*/}"
     prev=""
     collect_args=1
+    continue
+  fi
+  if [ "$arg" = "-process" ]; then
+    prev="-process"
     continue
   fi
   if [ "$arg" = "-postScript" ]; then
@@ -216,6 +227,12 @@ for arg in "$@"; do
       overwrite="$arg"
     elif { [ "$script" = "AnalyzeVtables.java" ] || [ "$logical_script" = "AnalyzeVtables.java" ]; } && [ -z "$report_path" ]; then
       report_path="$arg"
+    else
+      if [ -z "$extra_args" ]; then
+        extra_args="$arg"
+      else
+        extra_args="$extra_args|$arg"
+      fi
     fi
   fi
 done
@@ -315,6 +332,61 @@ vtables:
     signature_summary: "void(MockClass*)"
 EOF
   fi
+fi
+
+if [ "$script" = "ApplySignatures.java" ]; then
+  out_dir="$workspace/artifacts/$target/runtime"
+  mkdir -p "$out_dir"
+  cat > "$out_dir/apply-signatures-record.yaml" <<EOF
+script: "$script"
+program: "${program:-}"
+extra_args: "${extra_args:-}"
+EOF
+fi
+
+if [ "$script" = "ImportTypesAndSignatures.java" ]; then
+  out_dir="$workspace/artifacts/$target/runtime"
+  mkdir -p "$out_dir"
+  headers=""
+  include_dirs=""
+  signatures=""
+  prev_arg=""
+  IFS='|' read -r -a extra_parts <<< "${extra_args:-}"
+  for extra in "${extra_parts[@]}"; do
+    if [ "$prev_arg" = "--header" ]; then
+      if [ -z "$headers" ]; then
+        headers="$extra"
+      else
+        headers="$headers|$extra"
+      fi
+      prev_arg=""
+      continue
+    fi
+    if [ "$prev_arg" = "--include-dir" ]; then
+      if [ -z "$include_dirs" ]; then
+        include_dirs="$extra"
+      else
+        include_dirs="$include_dirs|$extra"
+      fi
+      prev_arg=""
+      continue
+    fi
+    if [ "$prev_arg" = "--signatures" ]; then
+      signatures="$extra"
+      prev_arg=""
+      continue
+    fi
+    if [ "$extra" = "--header" ] || [ "$extra" = "--include-dir" ] || [ "$extra" = "--signatures" ]; then
+      prev_arg="$extra"
+    fi
+  done
+  cat > "$out_dir/import-types-and-signatures-record.yaml" <<EOF
+script: "$script"
+program: "${program:-}"
+headers: "${headers:-}"
+include_dirs: "${include_dirs:-}"
+signatures: "${signatures:-}"
+EOF
 fi
 
 "#,
@@ -1927,6 +1999,184 @@ fn ghidra_analyze_vtables_with_bundled_entry_keeps_cli_compatibility() {
         .join("baseline");
     assert!(baseline_dir.join("vtable-analysis-report.yaml").exists());
     assert!(baseline_dir.join("vtables.yaml").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn ghidra_apply_signatures_preserves_names_unless_rename_flag_is_set() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    let fake_ghidra = install_fake_ghidra(&tmp);
+    let fake_bundle = install_fake_bundled_entry(&tmp);
+    let metadata_dir = tmp
+        .path()
+        .join("artifacts")
+        .join("libtest")
+        .join("metadata");
+    std::fs::create_dir_all(&metadata_dir).unwrap();
+    std::fs::write(
+        metadata_dir.join("signatures.yaml"),
+        "target: libtest\nsignatures:\n  - addr: 0x1000\n    prototype: int decode(void)\n",
+    )
+    .unwrap();
+
+    cli()
+        .env("GHIDRA_INSTALL_DIR", &fake_ghidra)
+        .env("GHIDRA_SCRIPTS_DIR", &fake_bundle)
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["ghidra", "apply-signatures"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("signatures applied"));
+
+    let record_path = tmp
+        .path()
+        .join("artifacts")
+        .join("libtest")
+        .join("runtime")
+        .join("apply-signatures-record.yaml");
+    let record = std::fs::read_to_string(&record_path).unwrap();
+    assert!(record.contains("script: \"ApplySignatures.java\""));
+    assert!(record.contains("program: \"dummy.bin\""));
+    assert!(record.contains("extra_args: \"\""));
+
+    cli()
+        .env("GHIDRA_INSTALL_DIR", &fake_ghidra)
+        .env("GHIDRA_SCRIPTS_DIR", &fake_bundle)
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .args(["ghidra", "apply-signatures", "--rename-from-signature"])
+        .assert()
+        .success();
+
+    let record = std::fs::read_to_string(record_path).unwrap();
+    assert!(record.contains("--rename-from-signature"));
+}
+
+#[cfg(unix)]
+#[test]
+fn ghidra_import_types_and_signatures_uses_pipeline_binary_name_and_default_signatures() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    let fake_ghidra = install_fake_ghidra(&tmp);
+    let headers_dir = tmp.path().join("include");
+    let fake_bundle = install_fake_bundled_entry(&tmp);
+    std::fs::create_dir_all(&headers_dir).unwrap();
+    let metadata_dir = tmp
+        .path()
+        .join("artifacts")
+        .join("libtest")
+        .join("metadata");
+    std::fs::create_dir_all(&metadata_dir).unwrap();
+
+    let context_header = headers_dir.join("custom_types.h");
+    let api_header = headers_dir.join("custom_api.h");
+    let default_signatures = metadata_dir.join("signatures.yaml");
+    std::fs::write(
+        &context_header,
+        "typedef struct CustomContext { int x; } CustomContext;",
+    )
+    .unwrap();
+    std::fs::write(
+        &api_header,
+        "typedef struct CustomRecord { int y; } CustomRecord;",
+    )
+    .unwrap();
+    std::fs::write(
+        &default_signatures,
+        "target: libtest\nsignatures:\n  - addr: 0x1000\n    prototype: int decode(void)\n",
+    )
+    .unwrap();
+
+    cli()
+        .env("GHIDRA_INSTALL_DIR", &fake_ghidra)
+        .env("GHIDRA_SCRIPTS_DIR", &fake_bundle)
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .arg("ghidra")
+        .arg("import-types-and-signatures")
+        .args(["--header", context_header.to_str().unwrap()])
+        .args(["--header", api_header.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("types and signatures imported"))
+        .stdout(predicate::str::contains("headers"))
+        .stdout(predicate::str::contains("dummy.bin"))
+        .stdout(predicate::str::contains(context_header.to_str().unwrap()))
+        .stdout(predicate::str::contains(api_header.to_str().unwrap()));
+    // Default signatures path should be reported when metadata/signatures.yaml exists.
+
+    let record = std::fs::read_to_string(
+        tmp.path()
+            .join("artifacts")
+            .join("libtest")
+            .join("runtime")
+            .join("import-types-and-signatures-record.yaml"),
+    )
+    .unwrap();
+    assert!(record.contains("script: \"ImportTypesAndSignatures.java\""));
+    assert!(record.contains("program: \"dummy.bin\""));
+    assert!(record.contains(context_header.to_str().unwrap()));
+    assert!(record.contains(api_header.to_str().unwrap()));
+    assert!(record.contains(default_signatures.to_str().unwrap()));
+}
+
+#[cfg(unix)]
+#[test]
+fn ghidra_import_types_and_signatures_passes_explicit_signatures_path() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    let fake_ghidra = install_fake_ghidra(&tmp);
+    let fake_bundle = install_fake_bundled_entry(&tmp);
+    let headers_dir = tmp.path().join("include");
+    let input_dir = tmp.path().join("input");
+    std::fs::create_dir_all(&headers_dir).unwrap();
+    std::fs::create_dir_all(&input_dir).unwrap();
+
+    let context_header = headers_dir.join("custom_types.h");
+    let explicit_signatures = input_dir.join("custom-signatures.yaml");
+    std::fs::write(
+        &context_header,
+        "typedef struct CustomContext { int x; } CustomContext;",
+    )
+    .unwrap();
+    std::fs::write(
+        &explicit_signatures,
+        "target: libtest\nsignatures:\n  - addr: 0x1000\n    signature: int decode(void)\n",
+    )
+    .unwrap();
+
+    cli()
+        .env("GHIDRA_INSTALL_DIR", &fake_ghidra)
+        .env("GHIDRA_SCRIPTS_DIR", &fake_bundle)
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .args(["--target", "libtest"])
+        .arg("ghidra")
+        .arg("import-types-and-signatures")
+        .args(["--header", context_header.to_str().unwrap()])
+        .args(["--include-dir", headers_dir.to_str().unwrap()])
+        .args(["--signatures", explicit_signatures.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ImportTypesAndSignatures.java"))
+        .stdout(predicate::str::contains(headers_dir.to_str().unwrap()))
+        .stdout(predicate::str::contains(
+            explicit_signatures.to_str().unwrap(),
+        ));
+
+    let record = std::fs::read_to_string(
+        tmp.path()
+            .join("artifacts")
+            .join("libtest")
+            .join("runtime")
+            .join("import-types-and-signatures-record.yaml"),
+    )
+    .unwrap();
+    assert!(record.contains("program: \"dummy.bin\""));
+    assert!(record.contains(context_header.to_str().unwrap()));
+    assert!(record.contains(headers_dir.to_str().unwrap()));
+    assert!(record.contains(explicit_signatures.to_str().unwrap()));
 }
 
 #[cfg(unix)]

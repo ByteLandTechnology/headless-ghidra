@@ -68,26 +68,26 @@ Global flags:
 
 ## Command Groups
 
-| Group                                                                                 | Purpose                                                                                             |
-| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `workspace`                                                                           | Initialize a target workspace and manage phase state                                                |
-| `scope`                                                                               | Manage `scope.yaml`                                                                                 |
-| `functions` / `callgraph` / `types` / `vtables` / `constants` / `strings` / `imports` | Manage baseline YAML metadata                                                                       |
-| `third-party`                                                                         | Manage `third-party/identified.yaml`, explicit no-third-party reviews, and pristine source metadata |
-| `runtime`                                                                             | Manage `runtime/run-manifest.yaml` and `runtime/run-records/*.yaml`                                 |
-| `hotpath`                                                                             | Manage `runtime/hotpaths/call-chain.yaml`                                                           |
-| `metadata`                                                                            | Manage P3 metadata YAML such as `metadata/renames.yaml` and `metadata/signatures.yaml`              |
-| `substitute`                                                                          | Manage P4 substitution records under `substitution/functions/<fn_id>/`                              |
-| `git-check`                                                                           | Validate artifact YAML files are tracked or staged in git                                           |
-| `execution-log`                                                                       | Append and inspect execution records                                                                |
-| `progress`                                                                            | Compatibility helpers for legacy decompilation progress YAML                                        |
-| `gate`                                                                                | Run aggregate gate checks and inspect gate reports                                                  |
-| `ghidra`                                                                              | Discover Ghidra, import/analyze, export baseline, apply changes, decompile, rebuild                 |
-| `frida`                                                                               | Device, capture, compare, trace, run, and invoke helpers                                            |
-| `inspect`                                                                             | Read-only binary inspection helpers                                                                 |
-| `context`                                                                             | Active context helpers                                                                              |
-| `paths`                                                                               | Show resolved workspace/runtime paths                                                               |
-| `validate` / `help`                                                                   | Validation and help surfaces                                                                        |
+| Group                                                                                 | Purpose                                                                                                               |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `workspace`                                                                           | Initialize a target workspace and manage phase state                                                                  |
+| `scope`                                                                               | Manage `scope.yaml`                                                                                                   |
+| `functions` / `callgraph` / `types` / `vtables` / `constants` / `strings` / `imports` | Manage baseline YAML metadata                                                                                         |
+| `third-party`                                                                         | Manage `third-party/identified.yaml`, explicit no-third-party reviews, and pristine source metadata                   |
+| `runtime`                                                                             | Manage `runtime/run-manifest.yaml` and `runtime/run-records/*.yaml`                                                   |
+| `hotpath`                                                                             | Manage `runtime/hotpaths/call-chain.yaml`                                                                             |
+| `metadata`                                                                            | Manage P3 metadata YAML such as `metadata/renames.yaml` and `metadata/signatures.yaml`                                |
+| `substitute`                                                                          | Manage P4 substitution records under `substitution/functions/<fn_id>/`                                                |
+| `git-check`                                                                           | Validate artifact YAML files are tracked or staged in git                                                             |
+| `execution-log`                                                                       | Append and inspect execution records                                                                                  |
+| `progress`                                                                            | Compatibility helpers for legacy decompilation progress YAML                                                          |
+| `gate`                                                                                | Run aggregate gate checks and inspect gate reports                                                                    |
+| `ghidra`                                                                              | Discover Ghidra, import/analyze, export baseline, apply changes, import custom headers/signatures, decompile, rebuild |
+| `frida`                                                                               | Device, capture, compare, trace, run, and invoke helpers                                                              |
+| `inspect`                                                                             | Read-only binary inspection helpers                                                                                   |
+| `context`                                                                             | Active context helpers                                                                                                |
+| `paths`                                                                               | Show resolved workspace/runtime paths                                                                                 |
+| `validate` / `help`                                                                   | Validation and help surfaces                                                                                          |
 
 ## Workspace Model
 
@@ -210,6 +210,9 @@ ghidra-agent-cli --target libfoo ghidra import
 ghidra-agent-cli --target libfoo ghidra auto-analyze
 ghidra-agent-cli --target libfoo ghidra export-baseline
 ghidra-agent-cli --target libfoo functions list
+
+# Import custom headers and signatures into the current Ghidra program
+ghidra-agent-cli --target libfoo ghidra import-types-and-signatures --header ./include/custom_types.h --header ./include/custom_api.h
 
 # Runtime, metadata, substitution, and gate checks
 ghidra-agent-cli --target libfoo runtime record --key entrypoint --value 0x401000

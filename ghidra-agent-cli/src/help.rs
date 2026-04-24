@@ -1239,6 +1239,10 @@ pub fn structured_help(path: &[String]) -> Option<HelpDocument> {
                     summary: "Verify applied signatures".into(),
                 },
                 HelpSubcommand {
+                    name: "import-types-and-signatures".into(),
+                    summary: "Import custom C types and function signatures".into(),
+                },
+                HelpSubcommand {
                     name: "decompile".into(),
                     summary: "Decompile functions via Ghidra".into(),
                 },
@@ -1344,6 +1348,51 @@ pub fn structured_help(path: &[String]) -> Option<HelpDocument> {
             ],
         }),
 
+        ["ghidra", "apply-signatures"] => Some(HelpDocument {
+            command_path: vec![SKILL_NAME.into(), "ghidra".into(), "apply-signatures".into()],
+            purpose: "Apply function signatures to the current Ghidra program".into(),
+            usage: format!("{SKILL_NAME} ghidra apply-signatures [OPTIONS]"),
+            arguments: vec![],
+            options: vec![
+                opt_workspace(),
+                opt_target(),
+                opt_format(),
+                HelpOption {
+                    name: "--rename-from-signature".into(),
+                    value_name: String::new(),
+                    default_value: "false".into(),
+                    description:
+                        "Also rename functions when a signature entry contains a non-placeholder name"
+                            .into(),
+                },
+            ],
+            subcommands: vec![],
+            output_formats: standard_formats(),
+            exit_behavior: standard_exit_codes(),
+            description: vec![
+                "Reads artifacts/<target>/metadata/signatures.yaml when present".into(),
+                "and applies return types, parameters, and varargs by address.".into(),
+                "If that file is absent, falls back to baseline/types.yaml".into(),
+                "function entries for compatibility.".into(),
+                String::new(),
+                "Function names are preserved by default. Use".into(),
+                "--rename-from-signature to opt into renaming from full C".into(),
+                "prototypes such as int decode(ImportedContext *ctx).".into(),
+            ],
+            examples: vec![
+                HelpExample {
+                    command: format!("{SKILL_NAME} ghidra apply-signatures --target libfoo"),
+                    description: "Apply recovered prototypes without changing function names".into(),
+                },
+                HelpExample {
+                    command: format!(
+                        "{SKILL_NAME} ghidra apply-signatures --target libfoo --rename-from-signature"
+                    ),
+                    description: "Apply signatures and names from full C prototypes".into(),
+                },
+            ],
+        }),
+
         ["ghidra", "decompile"] => Some(HelpDocument {
             command_path: vec![SKILL_NAME.into(), "ghidra".into(), "decompile".into()],
             purpose: "Decompile one or more functions via Ghidra".into(),
@@ -1384,6 +1433,80 @@ pub fn structured_help(path: &[String]) -> Option<HelpDocument> {
                         "{SKILL_NAME} ghidra decompile --target libfoo --fn-id fn_001 --addr 0x401000 --format json"
                     ),
                     description: "Decompile one function with JSON output".into(),
+                },
+            ],
+        }),
+
+        ["ghidra", "import-types-and-signatures"] => Some(HelpDocument {
+            command_path: vec![
+                SKILL_NAME.into(),
+                "ghidra".into(),
+                "import-types-and-signatures".into(),
+            ],
+            purpose: "Import selected C headers and apply function signatures".into(),
+            usage: format!(
+                "{SKILL_NAME} ghidra import-types-and-signatures --header <PATH> [--header <PATH> ...] [--include-dir <PATH> ...] [--signatures <PATH>] [--program <NAME>]"
+            ),
+            arguments: vec![],
+            options: vec![
+                opt_workspace(),
+                opt_target(),
+                opt_format(),
+                HelpOption {
+                    name: "--header".into(),
+                    value_name: "PATH".into(),
+                    default_value: String::new(),
+                    description:
+                        "Repeat to import one or more header files into the current program".into(),
+                },
+                HelpOption {
+                    name: "--include-dir".into(),
+                    value_name: "PATH".into(),
+                    default_value: "parent directories of --header values".into(),
+                    description: "Repeat to add C parser include search directories".into(),
+                },
+                HelpOption {
+                    name: "--signatures".into(),
+                    value_name: "PATH".into(),
+                    default_value: "artifacts/<target>/metadata/signatures.yaml when present"
+                        .into(),
+                    description:
+                        "YAML file containing signature entries with prototype or signature fields"
+                            .into(),
+                },
+                HelpOption {
+                    name: "--program".into(),
+                    value_name: "NAME".into(),
+                    default_value: "pipeline-state binary basename".into(),
+                    description:
+                        "Program name to open with -process before importing types and signatures"
+                            .into(),
+                },
+            ],
+            subcommands: vec![],
+            output_formats: standard_formats(),
+            exit_behavior: standard_exit_codes(),
+            description: vec![
+                "Runs the bundled ImportTypesAndSignatures.java helper against".into(),
+                "the resolved target project and current program.".into(),
+                String::new(),
+                "Header parent directories are added to the C parser include".into(),
+                "path automatically. Use --include-dir for extra include roots.".into(),
+                "If --signatures is omitted and artifacts/<target>/metadata/".into(),
+                "signatures.yaml exists, that file is used automatically.".into(),
+            ],
+            examples: vec![
+                HelpExample {
+                    command: format!(
+                        "{SKILL_NAME} ghidra import-types-and-signatures --target libfoo --header ./include/custom_types.h --header ./include/custom_api.h"
+                    ),
+                    description: "Import custom headers into the current Ghidra program".into(),
+                },
+                HelpExample {
+                    command: format!(
+                        "{SKILL_NAME} ghidra import-types-and-signatures --target libfoo --header ./include/custom_types.h --signatures ./metadata/signatures.yaml --program dummy.bin"
+                    ),
+                    description: "Override the signature source and program name".into(),
                 },
             ],
         }),
@@ -1799,6 +1922,11 @@ mod tests {
         let doc = structured_help(&["ghidra".into()]).expect("ghidra help");
         assert!(doc.subcommands.iter().any(|s| s.name == "discover"));
         assert!(doc.subcommands.iter().any(|s| s.name == "import"));
+        assert!(
+            doc.subcommands
+                .iter()
+                .any(|s| s.name == "import-types-and-signatures")
+        );
         assert!(doc.subcommands.iter().any(|s| s.name == "decompile"));
     }
 
@@ -1822,6 +1950,28 @@ mod tests {
         assert!(doc.options.iter().any(|o| o.name == "--fn-id"));
         assert!(doc.options.iter().any(|o| o.name == "--addr"));
         assert!(doc.options.iter().any(|o| o.name == "--batch"));
+    }
+
+    #[test]
+    fn ghidra_apply_signatures() {
+        let doc = structured_help(&["ghidra".into(), "apply-signatures".into()])
+            .expect("ghidra apply-signatures help");
+        assert!(doc.options.iter().any(|o| o.name == "--target"));
+        assert!(
+            doc.options
+                .iter()
+                .any(|o| o.name == "--rename-from-signature")
+        );
+    }
+
+    #[test]
+    fn ghidra_import_types_and_signatures() {
+        let doc = structured_help(&["ghidra".into(), "import-types-and-signatures".into()])
+            .expect("ghidra import-types-and-signatures help");
+        assert!(doc.options.iter().any(|o| o.name == "--header"));
+        assert!(doc.options.iter().any(|o| o.name == "--include-dir"));
+        assert!(doc.options.iter().any(|o| o.name == "--signatures"));
+        assert!(doc.options.iter().any(|o| o.name == "--program"));
     }
 
     #[test]
@@ -1890,6 +2040,7 @@ mod tests {
                     "verify-renames",
                     "apply-signatures",
                     "verify-signatures",
+                    "import-types-and-signatures",
                     "decompile",
                     "rebuild-project",
                 ],

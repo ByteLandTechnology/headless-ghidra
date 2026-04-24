@@ -60,6 +60,49 @@ fn ghidra_available() -> bool {
     cli_command_succeeds(&["ghidra", "discover"])
 }
 
+fn discover_ghidra_dir() -> PathBuf {
+    let output = cli()
+        .args(["--format", "json", "ghidra", "discover"])
+        .output()
+        .expect("failed to run ghidra discover");
+    assert!(
+        output.status.success(),
+        "ghidra discover failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    PathBuf::from(
+        parsed
+            .get("data")
+            .and_then(|v| v.get("ghidra_install_dir"))
+            .and_then(|v| v.as_str())
+            .expect("ghidra discover output must contain data.ghidra_install_dir"),
+    )
+}
+
+fn build_script_bundle(tmp: &TempDir) -> PathBuf {
+    let ghidra_dir = discover_ghidra_dir();
+    let scripts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("ghidra-scripts");
+    let output_dir = tmp.path().join("ghidra-script-bundle");
+    let output = ProcessCommand::new("bash")
+        .arg(scripts_dir.join("build-bundle.sh"))
+        .arg("--ghidra-dir")
+        .arg(&ghidra_dir)
+        .arg("--source-dir")
+        .arg(&scripts_dir)
+        .arg("--output-dir")
+        .arg(&output_dir)
+        .output()
+        .expect("failed to run build-bundle.sh");
+    assert!(
+        output.status.success(),
+        "bundle build failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::canonicalize(output_dir).unwrap()
+}
+
 fn create_real_vtable_binary(tmp: &TempDir) -> PathBuf {
     let src = tmp.path().join("real_vtable_sample.cpp");
     fs::write(
@@ -159,8 +202,54 @@ int main(int argc, char **argv) {
     output
 }
 
+fn create_real_signature_binary(tmp: &TempDir) -> PathBuf {
+    let src = tmp.path().join("real_signature_sample.c");
+    fs::write(
+        &src,
+        r#"
+__attribute__((visibility("default"))) __attribute__((noinline))
+int hg_apply_sig_target(int value) {
+    return value + 11;
+}
+
+__attribute__((visibility("default"))) __attribute__((noinline))
+int hg_import_sig_target(void *decoder, void *frame) {
+    return decoder != 0 && frame != 0;
+}
+
+int main(int argc, char **argv) {
+    return hg_apply_sig_target(argc) + hg_import_sig_target(argv, argv);
+}
+"#,
+    )
+    .unwrap();
+
+    let output = tmp.path().join("real_signature_sample");
+    let compiler = c_compiler_path().expect("clang must be available for real signature tests");
+    let mut command = ProcessCommand::new(compiler);
+    command.args(["-O0", "-g", "-fno-inline"]);
+    if cfg!(target_os = "macos") {
+        command.arg("-Wl,-export_dynamic");
+    } else {
+        command.arg("-rdynamic");
+    }
+    let result = command.arg("-o").arg(&output).arg(&src).output().unwrap();
+
+    assert!(
+        result.status.success(),
+        "clang failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    output
+}
+
 fn cli_output(args: &[&str]) -> String {
     let scripts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("ghidra-scripts");
+    cli_output_with_scripts(args, &scripts_dir)
+}
+
+fn cli_output_with_scripts(args: &[&str], scripts_dir: &Path) -> String {
     let assert = cli()
         .env("GHIDRA_SCRIPTS_DIR", scripts_dir)
         .args(args)
@@ -182,6 +271,17 @@ fn run_cli(workspace: &Path, target: &str, args: &[&str]) -> String {
     let mut all = workspace_args(workspace, target);
     all.extend_from_slice(args);
     cli_output(&all)
+}
+
+fn run_cli_with_scripts(
+    workspace: &Path,
+    target: &str,
+    args: &[&str],
+    scripts_dir: &Path,
+) -> String {
+    let mut all = workspace_args(workspace, target);
+    all.extend_from_slice(args);
+    cli_output_with_scripts(&all, scripts_dir)
 }
 
 fn find_function_addr(workspace: &Path, target: &str, name_fragment: &str) -> (String, String) {
@@ -213,6 +313,59 @@ fn find_function_addr(workspace: &Path, target: &str, name_fragment: &str) -> (S
     }
 
     panic!("function containing '{name_fragment}' not found in:\n{content}");
+}
+
+fn find_exported_function_entry(
+    workspace: &Path,
+    target: &str,
+    name_fragment: &str,
+) -> Option<serde_yaml::Value> {
+    let functions_path = workspace
+        .join("artifacts")
+        .join(target)
+        .join("baseline")
+        .join("functions.yaml");
+    let content = fs::read_to_string(&functions_path).unwrap();
+    let doc: serde_yaml::Value = serde_yaml::from_str(&content).unwrap();
+    let functions = doc
+        .get("functions")
+        .and_then(|v| v.as_sequence())
+        .expect("baseline/functions.yaml must contain functions");
+
+    functions
+        .iter()
+        .find(|function| {
+            function
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .contains(name_fragment)
+        })
+        .cloned()
+}
+
+fn exported_function_entry(
+    workspace: &Path,
+    target: &str,
+    name_fragment: &str,
+) -> serde_yaml::Value {
+    find_exported_function_entry(workspace, target, name_fragment).unwrap_or_else(|| {
+        let functions_path = workspace
+            .join("artifacts")
+            .join(target)
+            .join("baseline")
+            .join("functions.yaml");
+        let content = fs::read_to_string(&functions_path).unwrap();
+        panic!("function containing '{name_fragment}' not found in:\n{content}")
+    })
+}
+
+fn exported_prototype(workspace: &Path, target: &str, name_fragment: &str) -> String {
+    exported_function_entry(workspace, target, name_fragment)
+        .get("prototype")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn init_git_repo(path: &Path) {
@@ -256,6 +409,160 @@ int call_hot_from_pristine_source(int x) {
     )
     .unwrap();
     pristine
+}
+
+#[cfg(unix)]
+#[test]
+fn ghidra_real_project_imports_custom_types_and_applies_signatures() {
+    if c_compiler_path().is_none() || !ghidra_available() {
+        eprintln!("skipping real Ghidra signature test; clang or Ghidra is unavailable");
+        return;
+    }
+
+    let tmp = TempDir::new().unwrap();
+    let target = "real_signature_sample";
+    let binary = create_real_signature_binary(&tmp);
+    let script_bundle = build_script_bundle(&tmp);
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .arg("workspace")
+        .arg("init")
+        .args(["--target", target])
+        .args(["--binary", binary.to_str().unwrap()])
+        .assert()
+        .success();
+
+    run_cli_with_scripts(tmp.path(), target, &["ghidra", "import"], &script_bundle);
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "auto-analyze"],
+        &script_bundle,
+    );
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "export-baseline"],
+        &script_bundle,
+    );
+
+    let (_, apply_addr) = find_function_addr(tmp.path(), target, "hg_apply_sig_target");
+    let (_, import_addr) = find_function_addr(tmp.path(), target, "hg_import_sig_target");
+    let metadata_dir = tmp.path().join("artifacts").join(target).join("metadata");
+    fs::create_dir_all(&metadata_dir).unwrap();
+
+    fs::write(
+        metadata_dir.join("signatures.yaml"),
+        format!(
+            "target: {target}\nsignatures:\n  - addr: \"{apply_addr}\"\n    prototype: \"double hg_apply_sig_renamed(double value)\"\n"
+        ),
+    )
+    .unwrap();
+
+    let apply_output = run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "apply-signatures"],
+        &script_bundle,
+    );
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "export-baseline"],
+        &script_bundle,
+    );
+
+    let apply_entry = exported_function_entry(tmp.path(), target, "hg_apply_sig_target");
+    let apply_name = apply_entry.get("name").and_then(|v| v.as_str()).unwrap();
+    let apply_prototype = apply_entry
+        .get("prototype")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    assert!(
+        apply_name.contains("hg_apply_sig_target"),
+        "apply-signatures should preserve names by default, entry was:\n{apply_entry:?}"
+    );
+    assert!(
+        apply_prototype.contains("double"),
+        "expected double return/parameter in prototype, got:\n{apply_prototype}\napply output:\n{apply_output}"
+    );
+    assert!(
+        find_exported_function_entry(tmp.path(), target, "hg_apply_sig_renamed").is_none(),
+        "renamed function should not exist before --rename-from-signature"
+    );
+
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "apply-signatures", "--rename-from-signature"],
+        &script_bundle,
+    );
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "export-baseline"],
+        &script_bundle,
+    );
+    let renamed_prototype = exported_prototype(tmp.path(), target, "hg_apply_sig_renamed");
+    assert!(
+        renamed_prototype.contains("double"),
+        "expected renamed function to keep applied signature, got:\n{renamed_prototype}"
+    );
+
+    let header_path = tmp.path().join("custom_types.h");
+    fs::write(
+        &header_path,
+        r#"
+typedef struct ImportedContext {
+    int state;
+} ImportedContext;
+
+typedef struct ImportedRecord {
+    int pts;
+} ImportedRecord;
+"#,
+    )
+    .unwrap();
+    fs::write(
+        metadata_dir.join("signatures.yaml"),
+        format!(
+            "target: {target}\nsignatures:\n  - addr: \"{import_addr}\"\n    prototype: \"int hg_import_sig_renamed(ImportedContext *ctx, ImportedRecord *record)\"\n"
+        ),
+    )
+    .unwrap();
+
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &[
+            "ghidra",
+            "import-types-and-signatures",
+            "--header",
+            header_path.to_str().unwrap(),
+        ],
+        &script_bundle,
+    );
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "export-baseline"],
+        &script_bundle,
+    );
+
+    let import_prototype = exported_prototype(tmp.path(), target, "hg_import_sig_target");
+    assert!(
+        find_exported_function_entry(tmp.path(), target, "hg_import_sig_renamed").is_none(),
+        "import-types-and-signatures should preserve function names while importing custom types"
+    );
+    assert!(
+        import_prototype.contains("ImportedContext"),
+        "expected imported context type in prototype, got:\n{import_prototype}"
+    );
+    assert!(
+        import_prototype.contains("ImportedRecord"),
+        "expected imported record type in prototype, got:\n{import_prototype}"
+    );
 }
 
 #[cfg(unix)]
