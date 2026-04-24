@@ -1,3 +1,9 @@
+## [1.6.3](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.6.2...v1.6.3) (2026-04-24)
+
+### Bug Fixes
+
+* **ghidra:** use function address in decompiled output headings ([7c62fd1](https://github.com/ByteLandTechnology/headless-ghidra/commit/7c62fd1d5242a6529865c3e50b2a59ebe2aaf0d1))
+
 ## [1.6.2](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.6.1...v1.6.2) (2026-04-24)
 
 ### Bug Fixes
