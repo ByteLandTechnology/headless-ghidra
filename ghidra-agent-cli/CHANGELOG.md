@@ -1,3 +1,9 @@
+## [1.6.1](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.6.0...v1.6.1) (2026-04-24)
+
+### Bug Fixes
+
+* **ghidra:** disable auto-analysis for metadata commands ([41b079e](https://github.com/ByteLandTechnology/headless-ghidra/commit/41b079e9267d751bd9dbcc21c93b49b756bd5ecb))
+
 ## [1.6.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.5.1...v1.6.0) (2026-04-24)
 
 ### Features

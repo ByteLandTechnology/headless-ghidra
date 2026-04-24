@@ -29,7 +29,7 @@ Install the matching CLI version into the skill directory (not global):
 
 ```sh
 cd <skill-directory>
-npm install ghidra-agent-cli@1.6.0
+npm install ghidra-agent-cli@1.6.1
 ```
 
 This creates `node_modules/.bin/ghidra-agent-cli` — a Node.js wrapper that
