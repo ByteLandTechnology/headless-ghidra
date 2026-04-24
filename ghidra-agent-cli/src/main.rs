@@ -5,9 +5,9 @@ use anyhow::{Result, anyhow};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use ghidra_agent_cli::{
-    Format, StructuredError, baseline, context, execution_log, gate, ghidra, lock, ok_output,
-    ok_output_with_data, paths, progress, schema, scope, serialize_value, third_party, workspace,
-    write_structured_error,
+    Format, StructuredError, baseline, context, execution_log, gate, ghidra, git_status, lock,
+    ok_output, ok_output_with_data, paths, progress, schema, scope, serialize_value, third_party,
+    workspace, write_structured_error,
 };
 
 // ---------------------------------------------------------------------------
@@ -3257,14 +3257,9 @@ fn exec_substitute_validate(cli: &Cli, args: &SubstituteValidateArgs, fmt: Forma
 }
 
 fn git_artifact_statuses(workspace: &Path, target: &str) -> Result<Vec<BTreeMap<String, String>>> {
-    let repo = match git2::Repository::discover(workspace) {
-        Ok(repo) => repo,
-        Err(_) => return Ok(vec![]),
+    let Some(worktree) = git_status::discover_worktree(workspace)? else {
+        return Ok(vec![]);
     };
-    let workdir = repo
-        .workdir()
-        .ok_or_else(|| anyhow!("git repository has no workdir"))?;
-    let workdir = std::fs::canonicalize(workdir)?;
     let artifact_root = workspace::artifact_dir(workspace, target);
     let mut rows = Vec::new();
     if !artifact_root.exists() {
@@ -3278,20 +3273,15 @@ fn git_artifact_statuses(workspace: &Path, target: &str) -> Result<Vec<BTreeMap<
             if path.is_dir() {
                 stack.push(path);
             } else if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
-                let canonical_path = std::fs::canonicalize(&path).unwrap_or(path.clone());
-                let rel = canonical_path.strip_prefix(&workdir).unwrap_or(&path);
-                let status = repo.status_file(rel).unwrap_or(git2::Status::WT_NEW);
-                let tracked_or_staged = status.is_empty()
-                    || status.intersects(
-                        git2::Status::INDEX_NEW
-                            | git2::Status::INDEX_MODIFIED
-                            | git2::Status::INDEX_RENAMED
-                            | git2::Status::INDEX_TYPECHANGE,
-                    );
+                let rel = git_status::repo_relative_path(&worktree, &path);
+                let status = git_status::status_file(&worktree, &rel);
                 let mut row = BTreeMap::new();
                 row.insert("path".into(), rel.to_string_lossy().to_string());
-                row.insert("status".into(), format!("{:?}", status));
-                row.insert("tracked_or_staged".into(), tracked_or_staged.to_string());
+                row.insert("status".into(), status.display);
+                row.insert(
+                    "tracked_or_staged".into(),
+                    status.tracked_or_staged.to_string(),
+                );
                 rows.push(row);
             }
         }

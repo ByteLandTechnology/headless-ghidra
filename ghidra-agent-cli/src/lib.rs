@@ -4,6 +4,7 @@ pub mod execution_log;
 pub mod frida;
 pub mod gate;
 pub mod ghidra;
+pub mod git_status;
 pub mod help;
 pub mod lock;
 pub mod paths;

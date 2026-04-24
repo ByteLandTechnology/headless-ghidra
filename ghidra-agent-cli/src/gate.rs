@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+use crate::git_status;
 use crate::schema::save_yaml;
 use crate::workspace::artifact_dir;
 
@@ -225,9 +226,9 @@ fn git_tracking_check(
     phase: &str,
     artifact_rel_paths: &[&str],
 ) -> GateCheck {
-    let repo = match git2::Repository::discover(workspace) {
-        Ok(repo) => repo,
-        Err(_) => {
+    let worktree = match git_status::discover_worktree(workspace) {
+        Ok(Some(worktree)) => worktree,
+        Ok(None) => {
             return GateCheck {
                 id: format!("{}_git_tracking", phase),
                 description: "phase artifacts are tracked or staged in git".into(),
@@ -237,23 +238,12 @@ fn git_tracking_check(
                 ),
             };
         }
-    };
-    let Some(workdir) = repo.workdir() else {
-        return GateCheck {
-            id: format!("{}_git_tracking", phase),
-            description: "phase artifacts are tracked or staged in git".into(),
-            passed: false,
-            detail: Some("git repository has no workdir".into()),
-        };
-    };
-    let workdir = match std::fs::canonicalize(workdir) {
-        Ok(path) => path,
         Err(err) => {
             return GateCheck {
                 id: format!("{}_git_tracking", phase),
                 description: "phase artifacts are tracked or staged in git".into(),
                 passed: false,
-                detail: Some(format!("failed to canonicalize git workdir: {err}")),
+                detail: Some(err.to_string()),
             };
         }
     };
@@ -266,11 +256,11 @@ fn git_tracking_check(
             continue;
         }
         if path.is_dir() {
-            match directory_yaml_tracking_failures(&repo, &workdir, &path) {
+            match directory_yaml_tracking_failures(&worktree, &path) {
                 Ok(mut inner) => failures.append(&mut inner),
                 Err(err) => failures.push(format!("{}: {err}", path.display())),
             }
-        } else if let Some(detail) = git_path_tracking_failure(&repo, &workdir, &path) {
+        } else if let Some(detail) = git_path_tracking_failure(&worktree, &path) {
             failures.push(detail);
         }
     }
@@ -287,31 +277,18 @@ fn git_tracking_check(
     }
 }
 
-fn git_path_tracking_failure(
-    repo: &git2::Repository,
-    workdir: &Path,
-    path: &Path,
-) -> Option<String> {
-    let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let repo_rel = canonical_path.strip_prefix(workdir).unwrap_or(path);
-    let status = repo.status_file(repo_rel).unwrap_or(git2::Status::WT_NEW);
-    let tracked_or_staged = status.is_empty()
-        || status.intersects(
-            git2::Status::INDEX_NEW
-                | git2::Status::INDEX_MODIFIED
-                | git2::Status::INDEX_RENAMED
-                | git2::Status::INDEX_TYPECHANGE,
-        );
-    if tracked_or_staged {
+fn git_path_tracking_failure(worktree: &git_status::GitWorktree, path: &Path) -> Option<String> {
+    let repo_rel = git_status::repo_relative_path(worktree, path);
+    let status = git_status::status_file(worktree, &repo_rel);
+    if status.tracked_or_staged {
         None
     } else {
-        Some(format!("{} status {:?}", repo_rel.display(), status))
+        Some(format!("{} status {}", repo_rel.display(), status.display))
     }
 }
 
 fn directory_yaml_tracking_failures(
-    repo: &git2::Repository,
-    workdir: &Path,
+    worktree: &git_status::GitWorktree,
     dir: &Path,
 ) -> Result<Vec<String>> {
     let mut failures = Vec::new();
@@ -327,7 +304,7 @@ fn directory_yaml_tracking_failures(
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("yaml") {
             yaml_count += 1;
-            if let Some(detail) = git_path_tracking_failure(repo, workdir, path) {
+            if let Some(detail) = git_path_tracking_failure(worktree, path) {
                 failures.push(detail);
             }
         }
@@ -339,8 +316,7 @@ fn directory_yaml_tracking_failures(
 }
 
 fn directory_tracking_failures(
-    repo: &git2::Repository,
-    workdir: &Path,
+    worktree: &git_status::GitWorktree,
     dir: &Path,
 ) -> Result<Vec<String>> {
     let mut failures = Vec::new();
@@ -356,7 +332,7 @@ fn directory_tracking_failures(
         let path = entry.path();
         if path.is_file() {
             file_count += 1;
-            if let Some(detail) = git_path_tracking_failure(repo, workdir, path) {
+            if let Some(detail) = git_path_tracking_failure(worktree, path) {
                 failures.push(detail);
             }
         }
@@ -727,11 +703,7 @@ fn third_party_pristine_failures(workspace: &Path, _target: &str, ad: &Path) -> 
         None => return vec!["libraries field missing or not a sequence".into()],
     };
 
-    let repo = git2::Repository::discover(workspace).ok();
-    let workdir = repo
-        .as_ref()
-        .and_then(|repo| repo.workdir())
-        .and_then(|path| std::fs::canonicalize(path).ok());
+    let worktree = git_status::discover_worktree(workspace).ok().flatten();
     let mut failures = Vec::new();
 
     for lib in libs {
@@ -754,8 +726,8 @@ fn third_party_pristine_failures(workspace: &Path, _target: &str, ad: &Path) -> 
             ));
             continue;
         }
-        if let (Some(repo), Some(workdir)) = (repo.as_ref(), workdir.as_ref()) {
-            match directory_tracking_failures(repo, workdir, &path) {
+        if let Some(worktree) = worktree.as_ref() {
+            match directory_tracking_failures(worktree, &path) {
                 Ok(mut inner) => failures.append(&mut inner),
                 Err(err) => failures.push(format!("{}: {err}", path.display())),
             }

@@ -19,7 +19,6 @@ sha2 = "0.10"
 walkdir = "2"
 libc = "0.2"
 regex = "1"
-git2 = { version = "0.19", features = ["vendored-openssl"] }
 tempfile = "3"
 
 [profile.release]
