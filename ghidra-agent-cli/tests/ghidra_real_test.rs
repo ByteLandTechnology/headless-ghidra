@@ -368,6 +368,82 @@ fn exported_prototype(workspace: &Path, target: &str, name_fragment: &str) -> St
         .to_string()
 }
 
+fn update_baseline_function_name(workspace: &Path, target: &str, addr: &str, new_name: &str) {
+    let functions_path = workspace
+        .join("artifacts")
+        .join(target)
+        .join("baseline")
+        .join("functions.yaml");
+    let content = fs::read_to_string(&functions_path).unwrap();
+    let mut doc: serde_yaml::Value = serde_yaml::from_str(&content).unwrap();
+    let functions = doc
+        .get_mut("functions")
+        .and_then(|v| v.as_sequence_mut())
+        .expect("baseline/functions.yaml must contain functions");
+
+    let mut updated = false;
+    for function in functions {
+        let entry_addr = function
+            .get("addr")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if entry_addr == addr {
+            let map = function
+                .as_mapping_mut()
+                .expect("function entry must be a mapping");
+            map.insert(
+                serde_yaml::Value::String("name".into()),
+                serde_yaml::Value::String(new_name.into()),
+            );
+            updated = true;
+            break;
+        }
+    }
+
+    assert!(
+        updated,
+        "function at {addr} not found in baseline/functions.yaml:\n{content}"
+    );
+    fs::write(&functions_path, serde_yaml::to_string(&doc).unwrap()).unwrap();
+}
+
+fn write_function_type_entry(workspace: &Path, target: &str, name: &str, definition: &str) {
+    let types_path = workspace
+        .join("artifacts")
+        .join(target)
+        .join("baseline")
+        .join("types.yaml");
+    let mut entry = serde_yaml::Mapping::new();
+    entry.insert(
+        serde_yaml::Value::String("name".into()),
+        serde_yaml::Value::String(name.into()),
+    );
+    entry.insert(
+        serde_yaml::Value::String("kind".into()),
+        serde_yaml::Value::String("function".into()),
+    );
+    entry.insert(
+        serde_yaml::Value::String("definition".into()),
+        serde_yaml::Value::String(definition.into()),
+    );
+
+    let mut root = serde_yaml::Mapping::new();
+    root.insert(
+        serde_yaml::Value::String("target".into()),
+        serde_yaml::Value::String(target.into()),
+    );
+    root.insert(
+        serde_yaml::Value::String("types".into()),
+        serde_yaml::Value::Sequence(vec![serde_yaml::Value::Mapping(entry)]),
+    );
+
+    fs::write(
+        &types_path,
+        serde_yaml::to_string(&serde_yaml::Value::Mapping(root)).unwrap(),
+    )
+    .unwrap();
+}
+
 fn init_git_repo(path: &Path) {
     let output = ProcessCommand::new("git")
         .arg("init")
@@ -409,6 +485,198 @@ int call_hot_from_pristine_source(int x) {
     )
     .unwrap();
     pristine
+}
+
+#[cfg(unix)]
+#[test]
+fn ghidra_real_project_metadata_commands_work_with_noanalysis() {
+    if c_compiler_path().is_none() || !ghidra_available() {
+        eprintln!("skipping real Ghidra metadata command test; clang or Ghidra is unavailable");
+        return;
+    }
+
+    let tmp = TempDir::new().unwrap();
+    let target = "real_metadata_commands";
+    let binary = create_real_signature_binary(&tmp);
+    let script_bundle = build_script_bundle(&tmp);
+
+    cli()
+        .args(["--workspace", tmp.path().to_str().unwrap()])
+        .arg("workspace")
+        .arg("init")
+        .args(["--target", target])
+        .args(["--binary", binary.to_str().unwrap()])
+        .assert()
+        .success();
+
+    run_cli_with_scripts(tmp.path(), target, &["ghidra", "import"], &script_bundle);
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "auto-analyze"],
+        &script_bundle,
+    );
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "export-baseline"],
+        &script_bundle,
+    );
+
+    let (_, apply_addr) = find_function_addr(tmp.path(), target, "hg_apply_sig_target");
+    let (_, import_addr) = find_function_addr(tmp.path(), target, "hg_import_sig_target");
+
+    let renamed = "hg_real_metadata_renamed";
+    update_baseline_function_name(tmp.path(), target, &apply_addr, renamed);
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "apply-renames"],
+        &script_bundle,
+    );
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "verify-renames"],
+        &script_bundle,
+    );
+    let rename_report = fs::read_to_string(
+        tmp.path()
+            .join("artifacts")
+            .join(target)
+            .join("gates")
+            .join("p2-verify-renames.yaml"),
+    )
+    .unwrap();
+    assert!(
+        rename_report.contains("passed: true"),
+        "verify-renames report was:\n{rename_report}"
+    );
+
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &[
+            "ghidra",
+            "decompile",
+            "--fn-id",
+            "fn_metadata_rename",
+            "--addr",
+            &apply_addr,
+        ],
+        &script_bundle,
+    );
+    let decomp_dir = tmp
+        .path()
+        .join("artifacts")
+        .join(target)
+        .join("decompilation")
+        .join("functions")
+        .join("fn_metadata_rename");
+    assert!(decomp_dir.join("fn_metadata_rename.c").exists());
+    assert!(decomp_dir.join("decompilation-record.yaml").exists());
+
+    let metadata_dir = tmp.path().join("artifacts").join(target).join("metadata");
+    fs::create_dir_all(&metadata_dir).unwrap();
+    fs::write(
+        metadata_dir.join("signatures.yaml"),
+        format!(
+            "target: {target}\nsignatures:\n  - addr: \"{apply_addr}\"\n    prototype: \"long hg_signature_only_name(long value)\"\n"
+        ),
+    )
+    .unwrap();
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "apply-signatures"],
+        &script_bundle,
+    );
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "export-baseline"],
+        &script_bundle,
+    );
+
+    let renamed_prototype = exported_prototype(tmp.path(), target, renamed);
+    assert!(
+        renamed_prototype.contains("long"),
+        "expected applied long signature, got:\n{renamed_prototype}"
+    );
+    assert!(
+        find_exported_function_entry(tmp.path(), target, "hg_signature_only_name").is_none(),
+        "apply-signatures should not rename without --rename-from-signature"
+    );
+
+    write_function_type_entry(tmp.path(), target, renamed, &renamed_prototype);
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "verify-signatures"],
+        &script_bundle,
+    );
+    let signature_report = fs::read_to_string(
+        tmp.path()
+            .join("artifacts")
+            .join(target)
+            .join("gates")
+            .join("p5-verify-sigs.yaml"),
+    )
+    .unwrap();
+    assert!(
+        signature_report.contains("passed: true"),
+        "verify-signatures report was:\n{signature_report}"
+    );
+
+    let header_path = tmp.path().join("custom_types.h");
+    fs::write(
+        &header_path,
+        r#"
+typedef struct ImportedContext {
+    int state;
+} ImportedContext;
+
+typedef struct ImportedRecord {
+    int pts;
+} ImportedRecord;
+"#,
+    )
+    .unwrap();
+    fs::write(
+        metadata_dir.join("signatures.yaml"),
+        format!(
+            "target: {target}\nsignatures:\n  - addr: \"{import_addr}\"\n    prototype: \"int hg_import_sig_target(ImportedContext *ctx, ImportedRecord *record)\"\n"
+        ),
+    )
+    .unwrap();
+
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &[
+            "ghidra",
+            "import-types-and-signatures",
+            "--header",
+            header_path.to_str().unwrap(),
+        ],
+        &script_bundle,
+    );
+    run_cli_with_scripts(
+        tmp.path(),
+        target,
+        &["ghidra", "export-baseline"],
+        &script_bundle,
+    );
+
+    let import_prototype = exported_prototype(tmp.path(), target, "hg_import_sig_target");
+    assert!(
+        import_prototype.contains("ImportedContext"),
+        "expected imported context type in prototype, got:\n{import_prototype}"
+    );
+    assert!(
+        import_prototype.contains("ImportedRecord"),
+        "expected imported record type in prototype, got:\n{import_prototype}"
+    );
 }
 
 #[cfg(unix)]

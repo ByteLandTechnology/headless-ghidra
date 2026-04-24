@@ -191,6 +191,10 @@ Known codes:
 - Targeted commands normally require `--target <id>` unless an active context is
   already set.
 - Supported mutating Ghidra and Frida operations run under the CLI lock model.
+- Ghidra metadata read/apply, vtable analysis, and decompile commands
+  (`export-baseline`, `analyze-vtables`, `apply-renames`, `verify-renames`,
+  `apply-signatures`, `verify-signatures`, `import-types-and-signatures`, and
+  `decompile`) pass Ghidra headless `-noanalysis` automatically.
 - `gate check` writes reports under `artifacts/<target-id>/gates/`.
 - `help` and `--help` describe the CLI surface only; they are not the workflow
   specification.

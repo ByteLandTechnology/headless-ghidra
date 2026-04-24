@@ -173,6 +173,7 @@ write_baseline=""
 overwrite=""
 report_path=""
 extra_args=""
+noanalysis="false"
 prev=""
 
 for arg in "$@"; do
@@ -194,6 +195,10 @@ for arg in "$@"; do
   fi
   if [ "$arg" = "-postScript" ]; then
     prev="-postScript"
+    continue
+  fi
+  if [ "$arg" = "-noanalysis" ]; then
+    noanalysis="true"
     continue
   fi
   if [ "$arg" = "-scriptPath" ]; then
@@ -239,6 +244,17 @@ done
 
 if [ -n "$logical_script" ]; then
   script="$logical_script"
+fi
+
+if [ -n "$workspace" ] && [ -n "$target" ]; then
+  out_dir="$workspace/artifacts/$target/runtime"
+  mkdir -p "$out_dir"
+  cat > "$out_dir/ghidra-last-invocation.yaml" <<EOF
+script: "$script"
+program: "${program:-}"
+noanalysis: $noanalysis
+extra_args: "${extra_args:-}"
+EOF
 fi
 
 if [ "$script" = "DecompileFunction.java" ]; then
@@ -340,6 +356,7 @@ if [ "$script" = "ApplySignatures.java" ]; then
   cat > "$out_dir/apply-signatures-record.yaml" <<EOF
 script: "$script"
 program: "${program:-}"
+noanalysis: $noanalysis
 extra_args: "${extra_args:-}"
 EOF
 fi
@@ -383,6 +400,7 @@ if [ "$script" = "ImportTypesAndSignatures.java" ]; then
   cat > "$out_dir/import-types-and-signatures-record.yaml" <<EOF
 script: "$script"
 program: "${program:-}"
+noanalysis: $noanalysis
 headers: "${headers:-}"
 include_dirs: "${include_dirs:-}"
 signatures: "${signatures:-}"
@@ -411,6 +429,18 @@ fn install_fake_bundled_entry(tmp: &TempDir) -> std::path::PathBuf {
     .unwrap();
     std::fs::write(bundle_dir.join("snakeyaml-2.6.jar"), b"fake-dependency").unwrap();
     bundle_dir
+}
+
+#[cfg(unix)]
+fn read_fake_ghidra_last_invocation(tmp: &TempDir, target: &str) -> String {
+    std::fs::read_to_string(
+        tmp.path()
+            .join("artifacts")
+            .join(target)
+            .join("runtime")
+            .join("ghidra-last-invocation.yaml"),
+    )
+    .unwrap()
 }
 
 fn java_available(cmd: &str) -> bool {
@@ -1888,6 +1918,10 @@ fn ghidra_decompile_single_with_mock_ghidra_creates_artifacts() {
     assert!(fn_dir.join("fn_001.c").exists());
     assert!(fn_dir.join("decompilation-record.yaml").exists());
 
+    let record = read_fake_ghidra_last_invocation(&tmp, "libtest");
+    assert!(record.contains("script: \"DecompileFunction.java\""));
+    assert!(record.contains("noanalysis: true"));
+
     let progress_path = tmp
         .path()
         .join("artifacts")
@@ -1926,6 +1960,10 @@ fn ghidra_decompile_single_with_bundled_entry_keeps_cli_compatibility() {
         .join("fn_001");
     assert!(fn_dir.join("fn_001.c").exists());
     assert!(fn_dir.join("decompilation-record.yaml").exists());
+
+    let record = read_fake_ghidra_last_invocation(&tmp, "libtest");
+    assert!(record.contains("script: \"DecompileFunction.java\""));
+    assert!(record.contains("noanalysis: true"));
 }
 
 #[cfg(unix)]
@@ -1999,6 +2037,82 @@ fn ghidra_analyze_vtables_with_bundled_entry_keeps_cli_compatibility() {
         .join("baseline");
     assert!(baseline_dir.join("vtable-analysis-report.yaml").exists());
     assert!(baseline_dir.join("vtables.yaml").exists());
+
+    let record = read_fake_ghidra_last_invocation(&tmp, "libtest");
+    assert!(record.contains("script: \"AnalyzeVtables.java\""));
+    assert!(record.contains("noanalysis: true"));
+}
+
+#[cfg(unix)]
+#[test]
+fn ghidra_metadata_commands_disable_headless_auto_analysis() {
+    let tmp = TempDir::new().unwrap();
+    init_workspace(&tmp, "libtest");
+    let fake_ghidra = install_fake_ghidra(&tmp);
+    let fake_bundle = install_fake_bundled_entry(&tmp);
+    let header = tmp.path().join("custom_types.h");
+    std::fs::write(
+        &header,
+        "typedef struct CustomContext { int x; } CustomContext;",
+    )
+    .unwrap();
+    let header_str = header.to_str().unwrap();
+
+    let commands = vec![
+        (
+            vec![
+                "ghidra",
+                "decompile",
+                "--fn-id",
+                "fn_001",
+                "--addr",
+                "0x1000",
+            ],
+            "DecompileFunction.java",
+        ),
+        (
+            vec!["ghidra", "analyze-vtables", "--write-baseline"],
+            "AnalyzeVtables.java",
+        ),
+        (vec!["ghidra", "export-baseline"], "ExportBaseline.java"),
+        (vec!["ghidra", "apply-renames"], "ApplyRenames.java"),
+        (vec!["ghidra", "verify-renames"], "VerifyRenames.java"),
+        (vec!["ghidra", "apply-signatures"], "ApplySignatures.java"),
+        (
+            vec!["ghidra", "verify-signatures"],
+            "VerifyFunctionSignatures.java",
+        ),
+        (
+            vec![
+                "ghidra",
+                "import-types-and-signatures",
+                "--header",
+                header_str,
+            ],
+            "ImportTypesAndSignatures.java",
+        ),
+    ];
+
+    for (args, script) in commands {
+        cli()
+            .env("GHIDRA_INSTALL_DIR", &fake_ghidra)
+            .env("GHIDRA_SCRIPTS_DIR", &fake_bundle)
+            .args(["--workspace", tmp.path().to_str().unwrap()])
+            .args(["--target", "libtest"])
+            .args(args)
+            .assert()
+            .success();
+
+        let record = read_fake_ghidra_last_invocation(&tmp, "libtest");
+        assert!(
+            record.contains(&format!("script: \"{script}\"")),
+            "expected script {script}, record was:\n{record}"
+        );
+        assert!(
+            record.contains("noanalysis: true"),
+            "expected -noanalysis for {script}, record was:\n{record}"
+        );
+    }
 }
 
 #[cfg(unix)]
@@ -2039,6 +2153,7 @@ fn ghidra_apply_signatures_preserves_names_unless_rename_flag_is_set() {
     let record = std::fs::read_to_string(&record_path).unwrap();
     assert!(record.contains("script: \"ApplySignatures.java\""));
     assert!(record.contains("program: \"dummy.bin\""));
+    assert!(record.contains("noanalysis: true"));
     assert!(record.contains("extra_args: \"\""));
 
     cli()
@@ -2051,6 +2166,7 @@ fn ghidra_apply_signatures_preserves_names_unless_rename_flag_is_set() {
         .success();
 
     let record = std::fs::read_to_string(record_path).unwrap();
+    assert!(record.contains("noanalysis: true"));
     assert!(record.contains("--rename-from-signature"));
 }
 
@@ -2117,6 +2233,7 @@ fn ghidra_import_types_and_signatures_uses_pipeline_binary_name_and_default_sign
     .unwrap();
     assert!(record.contains("script: \"ImportTypesAndSignatures.java\""));
     assert!(record.contains("program: \"dummy.bin\""));
+    assert!(record.contains("noanalysis: true"));
     assert!(record.contains(context_header.to_str().unwrap()));
     assert!(record.contains(api_header.to_str().unwrap()));
     assert!(record.contains(default_signatures.to_str().unwrap()));
@@ -2174,6 +2291,7 @@ fn ghidra_import_types_and_signatures_passes_explicit_signatures_path() {
     )
     .unwrap();
     assert!(record.contains("program: \"dummy.bin\""));
+    assert!(record.contains("noanalysis: true"));
     assert!(record.contains(context_header.to_str().unwrap()));
     assert!(record.contains(headers_dir.to_str().unwrap()));
     assert!(record.contains(explicit_signatures.to_str().unwrap()));

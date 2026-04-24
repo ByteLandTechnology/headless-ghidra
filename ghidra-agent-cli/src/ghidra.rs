@@ -205,6 +205,20 @@ fn should_use_bundled_entry(script: &str, scripts_dir: &Path) -> bool {
         && BUNDLED_SCRIPT_NAMES.contains(&logical_script_name(script))
 }
 
+fn should_disable_auto_analysis(script: &str) -> bool {
+    matches!(
+        logical_script_name(script),
+        "AnalyzeVtables.java"
+            | "ApplyRenames.java"
+            | "ApplySignatures.java"
+            | "DecompileFunction.java"
+            | "ExportBaseline.java"
+            | "ImportTypesAndSignatures.java"
+            | "VerifyFunctionSignatures.java"
+            | "VerifyRenames.java"
+    )
+}
+
 /// Run Ghidra analyzeHeadless with -import flag for binary import
 /// Uses native -import which establishes program context for subsequent scripts
 pub fn run_headless_import(
@@ -302,6 +316,9 @@ fn run_headless_impl(
     // Only use -process if a program name is explicitly provided
     if let Some(name) = program_name {
         cmd.arg("-process").arg(name);
+    }
+    if should_disable_auto_analysis(script) {
+        cmd.arg("-noanalysis");
     }
 
     cmd.arg("-postScript").arg(&post_script);
