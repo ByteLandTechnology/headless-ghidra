@@ -29,7 +29,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -236,9 +235,7 @@ public class ImportTypesAndSignatures extends GhidraScript {
     }
 
     private List<Map<?, ?>> loadSignatureEntries(Path yamlPath) throws IOException {
-        LoaderOptions loaderOptions = new LoaderOptions();
-        loaderOptions.setAllowDuplicateKeys(false);
-        Yaml yaml = new Yaml(new SafeConstructor(loaderOptions));
+        Yaml yaml = new Yaml(new SafeConstructor(YamlParsers.createLoaderOptions()));
         try (InputStream input = Files.newInputStream(yamlPath)) {
             Object root = yaml.load(input);
             if (!(root instanceof Map<?, ?>)) {

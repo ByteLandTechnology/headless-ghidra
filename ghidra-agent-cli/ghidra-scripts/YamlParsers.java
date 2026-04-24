@@ -12,7 +12,16 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 public final class YamlParsers {
+    private static final int YAML_CODE_POINT_LIMIT = 128 * 1024 * 1024;
+
     private YamlParsers() {
+    }
+
+    public static LoaderOptions createLoaderOptions() {
+        LoaderOptions loaderOptions = new LoaderOptions();
+        loaderOptions.setAllowDuplicateKeys(false);
+        loaderOptions.setCodePointLimit(YAML_CODE_POINT_LIMIT);
+        return loaderOptions;
     }
 
     public static List<FunctionEntry> loadFunctions(Path yamlPath) throws IOException {
@@ -26,9 +35,7 @@ public final class YamlParsers {
     }
 
     private static Map<?, ?> loadRootMap(Path yamlPath) throws IOException {
-        LoaderOptions loaderOptions = new LoaderOptions();
-        loaderOptions.setAllowDuplicateKeys(false);
-        Yaml yaml = new Yaml(new SafeConstructor(loaderOptions));
+        Yaml yaml = new Yaml(new SafeConstructor(createLoaderOptions()));
         try (InputStream input = Files.newInputStream(yamlPath)) {
             Object parsed = yaml.load(input);
             if (parsed == null) {
