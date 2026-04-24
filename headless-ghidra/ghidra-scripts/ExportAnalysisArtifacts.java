@@ -347,7 +347,7 @@ public class ExportAnalysisArtifacts extends GhidraScript {
             String name = cleanCell(func.getName());
             String entry = func.getEntryPoint().toString();
 
-            sb.append("### Function ").append(order).append(": `").append(name).append("`\n\n");
+            sb.append("### Function `").append(entry).append("`: `").append(name).append("`\n\n");
             sb.append("- `function_identity`: `").append(name).append("@").append(entry).append("`\n");
             sb.append("- `outer_to_inner_order`: `").append(order).append("`\n");
             sb.append("- `selection_reason`: `pending_analyst_entry`\n");

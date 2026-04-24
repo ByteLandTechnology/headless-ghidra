@@ -893,7 +893,7 @@ materialize_selected_decompilation() {
   local recon_root=""
   local line=""
   local in_code=0
-  local current_order=0
+  local current_order=""
   local current_name=""
   local current_identity=""
   local current_selection_reason=""
@@ -922,10 +922,14 @@ materialize_selected_decompilation() {
       continue
     fi
 
-    if [[ "${line}" =~ ^###\ Function\ ([0-9]+):\ \`(.+)\`$ ]]; then
+    if [[ "${line}" =~ ^###\ Function\ \`([^\`]+)\`:\ \`(.+)\`$ ]]; then
       if [[ -n "${current_name}" ]]; then
         if ! is_placeholder_decompilation "${current_code%$'\n'}"; then
           wrote_real_code=1
+        fi
+        if [[ -z "${current_order}" ]]; then
+          printf 'ERROR: section for %s missing outer_to_inner_order field\n' "${current_name}" >&2
+          return 1
         fi
         write_materialized_function_artifacts \
           "${iteration_id}" \
@@ -942,7 +946,7 @@ materialize_selected_decompilation() {
           "${recon_root}"
         wrote_any=1
       fi
-      current_order="${BASH_REMATCH[1]}"
+      current_order=""
       current_name="${BASH_REMATCH[2]}"
       current_identity=""
       current_selection_reason=""
@@ -967,6 +971,8 @@ materialize_selected_decompilation() {
       current_name_evidence="${BASH_REMATCH[1]}"
     elif [[ "${line}" =~ ^-\ \`prototype_evidence\`:\ \`(.+)\`$ ]]; then
       current_prototype_evidence="${BASH_REMATCH[1]}"
+    elif [[ "${line}" =~ ^-\ \`outer_to_inner_order\`:\ \`([0-9]+)\`$ ]]; then
+      current_order="${BASH_REMATCH[1]}"
     elif [[ "${line}" =~ ^-\ \`confidence\`:\ \`(.+)\`$ ]]; then
       current_confidence="${BASH_REMATCH[1]}"
     elif [[ "${line}" =~ ^-\ \`open_questions\`:\ \`(.+)\`$ ]]; then
@@ -979,6 +985,10 @@ materialize_selected_decompilation() {
   if [[ -n "${current_name}" ]]; then
     if ! is_placeholder_decompilation "${current_code%$'\n'}"; then
       wrote_real_code=1
+    fi
+    if [[ -z "${current_order}" ]]; then
+      printf 'ERROR: section for %s missing outer_to_inner_order field\n' "${current_name}" >&2
+      return 1
     fi
     write_materialized_function_artifacts \
       "${iteration_id}" \

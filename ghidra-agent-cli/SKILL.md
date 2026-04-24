@@ -52,19 +52,52 @@ ghidra-agent-cli [GLOBAL FLAGS] <COMMAND> [COMMAND FLAGS]
 cargo run -- [GLOBAL FLAGS] <COMMAND> [COMMAND FLAGS]
 ```
 
+## Input
+
 Global flags:
 
-- `--format yaml|json|toml`
-- `--target <id>`
-- `--workspace <path>`
-- `--config-dir`
-- `--data-dir`
-- `--state-dir`
-- `--cache-dir`
-- `--log-dir`
-- `--lock-timeout`
-- `--no-wait`
-- `--help`
+- `--format yaml|json|toml` — Output format (default: yaml)
+- `--target <id>` — Target selector
+- `--workspace <path>` — Workspace root path
+- `--config-dir <PATH>` — Override config directory
+- `--data-dir <PATH>` — Override data directory
+- `--state-dir <PATH>` — Override state directory
+- `--cache-dir <PATH>` — Override cache directory
+- `--log-dir <PATH>` — Override log directory
+- `--lock-timeout <SECS>` — Lock acquisition timeout in seconds (default: 30)
+- `--no-wait` — Do not wait for lock acquisition
+- `--help` — Show help text
+
+Most commands require `--target <id>` or an active context set via `context use`.
+
+## Output
+
+Commands emit a structured envelope in the selected format:
+
+```yaml
+status: ok
+message: "<summary>"
+data: <structured payload>
+```
+
+## Errors
+
+Errors are structured and stable:
+
+```json
+{
+  "code": "E_ERROR",
+  "message": "description of what went wrong",
+  "source": "main",
+  "format": "json"
+}
+```
+
+Known codes:
+
+- `E_ERROR` — General error
+- `E_GATE_FAILED` — Gate check failed
+- `E_LOCK_TIMEOUT` — Lock acquisition timed out
 
 ## Command Groups
 
@@ -158,46 +191,6 @@ artifacts.
 | `substitution/next-batch.yaml`              | P4 substitution worklist                                                                                                                                        |
 | `substitution/functions/<fn_id>/*.yaml`     | P4 function fixtures, captures, substitution records, status, and follow-up data                                                                                |
 | `gates/*-report.yaml`                       | Persisted gate check reports                                                                                                                                    |
-
-## Output Contract
-
-Commands emit a structured envelope in the selected format:
-
-```yaml
-status: ok
-message: "<summary>"
-data: <structured payload>
-```
-
-Errors are structured and stable:
-
-```json
-{
-  "code": "E_ERROR",
-  "message": "description of what went wrong",
-  "source": "main",
-  "format": "json"
-}
-```
-
-Known codes:
-
-- `E_ERROR`
-- `E_GATE_FAILED`
-- `E_LOCK_TIMEOUT`
-
-## Runtime Behavior
-
-- Targeted commands normally require `--target <id>` unless an active context is
-  already set.
-- Supported mutating Ghidra and Frida operations run under the CLI lock model.
-- Ghidra metadata read/apply, vtable analysis, and decompile commands
-  (`export-baseline`, `analyze-vtables`, `apply-renames`, `verify-renames`,
-  `apply-signatures`, `verify-signatures`, `import-types-and-signatures`, and
-  `decompile`) pass Ghidra headless `-noanalysis` automatically.
-- `gate check` writes reports under `artifacts/<target-id>/gates/`.
-- `help` and `--help` describe the CLI surface only; they are not the workflow
-  specification.
 
 ## Examples
 

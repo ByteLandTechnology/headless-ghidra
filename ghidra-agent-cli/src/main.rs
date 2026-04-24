@@ -1427,18 +1427,34 @@ DESCRIPTION
     through schema-validated YAML workspaces, scripted Ghidra runs, and gated
     incremental reconstruction builds.
 
-GLOBAL FLAGS
+OPTIONS
     --format <FORMAT>          Output format: yaml (default), json, toml
     --help                     Show this help text
     --config-dir <PATH>        Override config directory
     --data-dir <PATH>          Override data directory
     --state-dir <PATH>         Override state directory
     --cache-dir <PATH>         Override cache directory
-    --log-dir <PATH>           Override log directory
+    --log-dir <PATH>          Override log directory
     --lock-timeout <SECS>      Lock acquisition timeout in seconds (default: 30)
     --no-wait                  Do not wait for lock acquisition
     --target <TARGET>          Target selector
     --workspace <PATH>         Workspace root path
+
+FORMATS
+    yaml (default)             Structured YAML output
+    json                       Structured JSON output
+    toml                       Structured TOML output
+
+    All commands emit a structured envelope:
+        status: ok|error
+        message: "<summary>"
+        data: <structured payload>
+
+    Errors include:
+        code: E_ERROR|E_GATE_FAILED|E_LOCK_TIMEOUT
+        message: description
+        source: main|<subcommand>
+        format: yaml|json|toml
 
 COMMANDS
     validate          Validate workspace schema and gates
@@ -4551,7 +4567,34 @@ where
 // Main entry point
 // ===========================================================================
 
+/// Extract --format from raw command-line arguments before parsing.
+/// This allows us to format error output correctly even when CLI parsing fails.
+fn extract_format_from_args() -> Format {
+    let args: Vec<String> = std::env::args().collect();
+    for i in 0..args.len() {
+        if args[i] == "--format" && i + 1 < args.len() {
+            match args[i + 1].to_lowercase().as_str() {
+                "json" => return Format::Json,
+                "toml" => return Format::Toml,
+                _ => return Format::Yaml,
+            }
+        }
+        if args[i].starts_with("--format=") {
+            let val = args[i].trim_start_matches("--format=");
+            match val.to_lowercase().as_str() {
+                "json" => return Format::Json,
+                "toml" => return Format::Toml,
+                _ => return Format::Yaml,
+            }
+        }
+    }
+    Format::Yaml
+}
+
 fn main() {
+    // Extract --format from raw args before parsing, so we can use it for error output
+    let fmt = extract_format_from_args();
+
     let cli = match Cli::try_parse() {
         Ok(c) => c,
         Err(e) => {
@@ -4561,8 +4604,15 @@ fn main() {
                 print!("{text}");
                 std::process::exit(EXIT_SUCCESS);
             }
-            // All other clap errors (unknown args, bad values, etc.) use default handling
-            e.exit();
+            // Clap validation errors -> structured error in chosen format
+            let code = if e.kind() == clap::error::ErrorKind::InvalidValue {
+                "E_USAGE"
+            } else {
+                "E_ERROR"
+            };
+            let serr = StructuredError::new(code, format!("{e:#}"), "main", fmt);
+            let _ = write_structured_error(&mut std::io::stderr(), &serr, fmt);
+            std::process::exit(EXIT_USAGE);
         }
     };
 

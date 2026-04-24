@@ -2,26 +2,26 @@
 
 ### Bug Fixes
 
-* **ghidra-agent-cli:** raise SnakeYAML code point limit ([58713d4](https://github.com/ByteLandTechnology/headless-ghidra/commit/58713d46e4cb8f79f96bd696294fde1ca995515d))
+- **ghidra-agent-cli:** raise SnakeYAML code point limit ([58713d4](https://github.com/ByteLandTechnology/headless-ghidra/commit/58713d46e4cb8f79f96bd696294fde1ca995515d))
 
 ## [1.6.1](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.6.0...v1.6.1) (2026-04-24)
 
 ### Bug Fixes
 
-* **ghidra:** disable auto-analysis for metadata commands ([41b079e](https://github.com/ByteLandTechnology/headless-ghidra/commit/41b079e9267d751bd9dbcc21c93b49b756bd5ecb))
+- **ghidra:** disable auto-analysis for metadata commands ([41b079e](https://github.com/ByteLandTechnology/headless-ghidra/commit/41b079e9267d751bd9dbcc21c93b49b756bd5ecb))
 
 ## [1.6.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.5.1...v1.6.0) (2026-04-24)
 
 ### Features
 
-* **ghidra:** import custom types and signatures ([c58b971](https://github.com/ByteLandTechnology/headless-ghidra/commit/c58b971d149d8ac41999fdfc540e6fe04201164a))
+- **ghidra:** import custom types and signatures ([c58b971](https://github.com/ByteLandTechnology/headless-ghidra/commit/c58b971d149d8ac41999fdfc540e6fe04201164a))
 
 ## [1.5.1](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.5.0...v1.5.1) (2026-04-24)
 
 ### Bug Fixes
 
-* **release:** keep platform packages runtime-only ([e39d866](https://github.com/ByteLandTechnology/headless-ghidra/commit/e39d8664cb674b3c9a8f0d0f565df50c4734a8d6))
-* **release:** remove native git2 dependency ([3519e18](https://github.com/ByteLandTechnology/headless-ghidra/commit/3519e1851e95e42003bf1a77895a81d61970c673))
+- **release:** keep platform packages runtime-only ([e39d866](https://github.com/ByteLandTechnology/headless-ghidra/commit/e39d8664cb674b3c9a8f0d0f565df50c4734a8d6))
+- **release:** remove native git2 dependency ([3519e18](https://github.com/ByteLandTechnology/headless-ghidra/commit/3519e1851e95e42003bf1a77895a81d61970c673))
 
 ## [1.5.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.4.0...v1.5.0) (2026-04-23)
 
