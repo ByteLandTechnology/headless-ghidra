@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.5.0...v1.5.1) (2026-04-24)
+
+### Bug Fixes
+
+* **release:** keep platform packages runtime-only ([e39d866](https://github.com/ByteLandTechnology/headless-ghidra/commit/e39d8664cb674b3c9a8f0d0f565df50c4734a8d6))
+* **release:** remove native git2 dependency ([3519e18](https://github.com/ByteLandTechnology/headless-ghidra/commit/3519e1851e95e42003bf1a77895a81d61970c673))
+
 ## [1.5.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.4.0...v1.5.0) (2026-04-23)
 
 ### Features
