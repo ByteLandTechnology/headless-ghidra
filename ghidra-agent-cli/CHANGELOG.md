@@ -1,3 +1,9 @@
+## [1.6.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.5.1...v1.6.0) (2026-04-24)
+
+### Features
+
+* **ghidra:** import custom types and signatures ([c58b971](https://github.com/ByteLandTechnology/headless-ghidra/commit/c58b971d149d8ac41999fdfc540e6fe04201164a))
+
 ## [1.5.1](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.5.0...v1.5.1) (2026-04-24)
 
 ### Bug Fixes
