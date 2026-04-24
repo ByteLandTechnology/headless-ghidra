@@ -1,3 +1,9 @@
+## [1.6.2](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.6.1...v1.6.2) (2026-04-24)
+
+### Bug Fixes
+
+* **ghidra-agent-cli:** raise SnakeYAML code point limit ([58713d4](https://github.com/ByteLandTechnology/headless-ghidra/commit/58713d46e4cb8f79f96bd696294fde1ca995515d))
+
 ## [1.6.1](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.6.0...v1.6.1) (2026-04-24)
 
 ### Bug Fixes
