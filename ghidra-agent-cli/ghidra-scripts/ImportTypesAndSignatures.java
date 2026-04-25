@@ -159,7 +159,7 @@ public class ImportTypesAndSignatures extends GhidraScript {
                 BuiltInDataTypeManager.getDataTypeManager()
             };
             CParserUtils.CParseResults results =
-                CParserUtils.parseHeaderFiles(openTypes, headerPaths, includePaths, dtm, monitor);
+                CParserUtils.parseHeaderFiles(openTypes, headerPaths, includePaths, new String[0], dtm, monitor);
             if (results != null && !results.successful()) {
                 typeFilesFailed += headerPaths.length;
                 println("WARN: C header parser reported failure");

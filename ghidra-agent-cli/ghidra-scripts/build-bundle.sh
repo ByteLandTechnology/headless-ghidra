@@ -16,27 +16,27 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --ghidra-dir)
-      GHIDRA_DIR="${2:-}"
-      shift 2
-      ;;
-    --source-dir)
-      SOURCE_DIR="${2:-}"
-      shift 2
-      ;;
-    --output-dir)
-      OUTPUT_DIR="${2:-}"
-      shift 2
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      printf 'Unknown option: %s\n' "$1" >&2
-      usage >&2
-      exit 1
-      ;;
+  --ghidra-dir)
+    GHIDRA_DIR="${2:-}"
+    shift 2
+    ;;
+  --source-dir)
+    SOURCE_DIR="${2:-}"
+    shift 2
+    ;;
+  --output-dir)
+    OUTPUT_DIR="${2:-}"
+    shift 2
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    printf 'Unknown option: %s\n' "$1" >&2
+    usage >&2
+    exit 1
+    ;;
   esac
 done
 
@@ -215,10 +215,10 @@ while IFS= read -r source_file; do
         print line
       }
     ' "${source_file}"
-  } > "${impl_file}"
+  } >"${impl_file}"
 done < <(find "${SOURCE_DIR}" -maxdepth 1 -type f -name '*.java' | sort)
 
-cat > "${OUTPUT_DIR}/${ENTRY_SCRIPT_NAME}" <<'EOF'
+cat >"${OUTPUT_DIR}/${ENTRY_SCRIPT_NAME}" <<'EOF'
 import generic.jar.ResourceFile;
 import ghidra.app.script.GhidraScript;
 

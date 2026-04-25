@@ -20,3 +20,4 @@ ghidra-agent-cli/node_modules/
 ghidra-agent-cli/target/
 ghidra-agent-cli/dist/
 ghidra-agent-cli/tmp/
+ghidra-agent-cli/ghidra-script-bundle/

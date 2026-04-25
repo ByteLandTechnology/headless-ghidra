@@ -190,29 +190,15 @@ export function createLocalReleaseWorkspace(rootDir) {
   }
 
   function resolveGhidraInstallDir() {
-    const discoverScript = path.join(
-      rootDir,
-      "..",
-      "headless-ghidra",
-      "scripts",
-      "discover-ghidra.sh",
+    const envDir = process.env.GHIDRA_INSTALL_DIR;
+    if (envDir && existsSync(envDir)) {
+      return envDir;
+    }
+
+    throw new Error(
+      "GHIDRA_INSTALL_DIR is not set or does not exist. " +
+        "Set it to the Ghidra installation directory for script bundle compilation.",
     );
-    if (!existsSync(discoverScript)) {
-      throw new Error(`Ghidra discovery script not found: ${discoverScript}`);
-    }
-
-    const result = spawnSync("bash", [discoverScript, "--print-install-dir"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    if (result.status !== 0) {
-      const stderr = result.stderr?.trim() || "unknown error";
-      throw new Error(
-        `Unable to locate a Ghidra installation for script bundle compilation: ${stderr}`,
-      );
-    }
-
-    return result.stdout.trim();
   }
 
   function buildGhidraScriptBundle() {
