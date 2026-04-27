@@ -1,3 +1,9 @@
+## [1.6.4](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.6.3...v1.6.4) (2026-04-27)
+
+### Bug Fixes
+
+* **ghidra:** use correct CParserUtils overload for header parsing ([8fdc517](https://github.com/ByteLandTechnology/headless-ghidra/commit/8fdc51702cb1ced752bb30455636d4814543f012))
+
 ## [1.6.3](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.6.2...v1.6.3) (2026-04-24)
 
 ### Bug Fixes
