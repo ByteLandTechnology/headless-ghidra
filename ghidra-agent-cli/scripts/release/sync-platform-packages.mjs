@@ -178,7 +178,7 @@ for (const target of config.targets) {
   );
   writeFileSync(
     path.join(pkgDir, "README.md"),
-    `# ${pkgName}\n\n${target.os}-${target.cpu} binary for \`${cliName}\`.\nRuntime dependency of \`${mainPackageName}\`.\n`,
+    `# ${pkgName}\n\n${target.os}-${target.cpu} binary for \`${cliName}\`.\nRuntime dependency of \`${mainPackageName}\`.\nInstalled automatically through the main package; normal users do not install\nthis platform package directly.\n`,
     "utf8",
   );
 

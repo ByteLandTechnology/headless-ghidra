@@ -1,160 +1,189 @@
-# Release Automation Asset Pack
+# ghidra-agent-cli
 
-> Embedded-repo note: in this repository, the authoritative CI files live at
-> repo root: `.github/workflows/release.yml` and
-> `.github/actions/setup-build-env/action.yml`. Run release-pack commands from
-> `ghidra-agent-cli/`.
+`ghidra-agent-cli` is the bundled helper used by the Headless Ghidra skill
+family. The skills invoke it to create target workspaces, inspect binaries, run
+supported Ghidra and Frida operations, manage YAML artifacts, and check phase
+gates.
 
-Repository-owned release automation for target CLI skill repositories generated
-with the `cli-forge` skill family.
+Translations: [简体中文](./README.zh-CN.md) | [日本語](./README.ja-JP.md)
 
-## Release Model
+For normal use, start from the skill family README and ask your agent to use the
+`headless-ghidra` skill. This file is an agent tool reference for command
+semantics and troubleshooting. End users do not install, build, or run this CLI
+manually during a normal skill workflow.
 
-Before the first production release, run one real **npm prepublish** step to
-bootstrap package visibility and local auth. After that, one semantic-release
-run publishes the production release surfaces:
+## Helper Runtime Prerequisites
 
-1. git tag `v<version>` + GitHub Release page (archive + sha256 per target)
-2. **N platform npm packages** (`<name>-darwin-arm64`, `<name>-linux-x64`, ...)
-   each carrying only the matching native binary, gated by `os` / `cpu`; these
-   packages are runtime-only and do not expose a `bin` command
-3. **1 main npm package** (`<name>`) — a tiny JS shim whose
-   `optionalDependencies` pin every platform package to the same version and
-   whose `bin` field is the only published CLI entry point
-4. `CHANGELOG.md` entry
-5. `chore(release): <version> [skip ci]` commit (`CHANGELOG.md`,
-   `Cargo.toml`, `Cargo.lock`, `npm/main/package.json`)
+These apply when the installed skill invokes the helper.
 
-Users install with plain `npm install -g <name>`; npm picks the right platform
-package automatically. No postinstall download.
+- Node.js >= 18 for the npm wrapper.
+- A local Ghidra installation discoverable by `ghidra-agent-cli ghidra discover`
+  or configured through `GHIDRA_INSTALL_DIR`.
+- Optional Frida installation for `frida *` commands.
 
-## How To Use It
+## Availability
 
-1. Copy the contents of this directory into the root of the target CLI skill
-   repository.
-2. Fill `release/config.json`:
-   - `cliName` — the shipped CLI binary name
-   - `mainPackageName` — the npm main package name (for example `foo` or
-     `@cli/foo`)
-   - `mainNpmScope` — `null` for unscoped, or the scope string for
-     `mainPackageName`
-   - `platformNpmScope` — `null` for unscoped platform packages, or a different
-     scope string when platform packages should publish under another scope
-   - `sourceRepository` — `owner/repo` on GitHub
-3. Platform package names are derived automatically from the main package body.
-   The main package and platform packages may use different scopes, but only
-   the scope may differ. Example:
-   - main: `@cli/foo`
-   - platforms: `@cli-platform/foo-darwin-arm64`, `@cli-platform/foo-linux-x64`
-4. `npm/main/package.json` is derived at release time from
-   `release/config.json`. You may pre-fill it for local testing, but
-   `sync-platform-packages.mjs` will overwrite `name`, `version`, `bin`, and
-   `optionalDependencies` from the authoritative config during `prepare`.
-   Generated platform package manifests intentionally omit `bin`; their native
-   binaries stay under `bin/` so the main shim can resolve and launch them.
-5. Configure npm trusted publishing on npmjs.com for this repository's
-   `release.yml`:
-   - configure a publisher entry for the main package and for **each** platform
-     package
-   - each entry points at the same workflow file (`release.yml`)
-   - keep the job's `id-token: write` permission and do not inject `NPM_TOKEN`
-6. Install the release harness locally once for a dry-run:
+The CLI ships with the skill family and is used from the installed skill
+directory. If an agent reports that `ghidra-agent-cli` is unavailable, reinstall
+or refresh the whole skill family so `headless-ghidra`, the phase skills, and
+`ghidra-agent-cli` remain installed as sibling directories.
 
-   ```bash
-   npm ci
-   npm run release:rehearse
-   ```
+## Invocation
 
-   This builds every target, generates platform packages, and runs
-   `npm publish --dry-run` for each, validating the full pipeline without
-   pushing tags or publishing to npm.
-
-   To see what version semantic-release _would_ choose without exercising the
-   custom hooks:
-
-   ```bash
-   npm run release:dry-run
-   ```
-
-7. Before the first production CI release, perform the real prepublish step:
-
-   ```bash
-   npm run release:prepublish
-   ```
-
-   This publishes all platform packages and the main package at a dedicated
-   prepublish version such as `0.0.0-prepublish.1`. If local npm auth is missing, the
-   helper runs `npm login`; when npm prints a verification URL, open it in your
-   browser and finish verification before the script continues. The prepublish helper
-   temporarily disables npm provenance locally so this bootstrap publish does
-   not masquerade as a CI-backed release.
-
-8. Push to `main`; the workflow drives the live release.
-
-## Targets
-
-Defined in `release/config.json#targets`. Defaults:
-
-| rustTarget                   | npm package suffix | os     | cpu   |
-| ---------------------------- | ------------------ | ------ | ----- |
-| `aarch64-apple-darwin`       | `darwin-arm64`     | darwin | arm64 |
-| `x86_64-apple-darwin`        | `darwin-x64`       | darwin | x64   |
-| `aarch64-unknown-linux-musl` | `linux-arm64`      | linux  | arm64 |
-| `x86_64-unknown-linux-musl`  | `linux-x64`        | linux  | x64   |
-| `aarch64-pc-windows-gnullvm` | `win32-arm64`      | win32  | arm64 |
-| `x86_64-pc-windows-gnullvm`  | `win32-x64`        | win32  | x64   |
-
-All six are built on a single `macos-14` runner using `cargo` + `cargo zigbuild`
-
-- `llvm-mingw` (set up by `.github/actions/setup-build-env`). Linux targets use
-  musl for fully static binaries that run on both glibc and musl (Alpine) systems.
-
-## Clone-First Install (optional)
-
-When users already have a checkout and want to install the binary directly from
-the tagged GitHub Release archive, the harness attaches `tar.gz` + `sha256` per
-target:
-
-```bash
-git clone https://github.com/<owner>/<repo>.git
-cd <repo>
-git checkout v<version>
-./scripts/install-current-release.sh
+```sh
+ghidra-agent-cli [GLOBAL FLAGS] <COMMAND> [COMMAND FLAGS]
 ```
 
-The helper requires Node.js to read `release/config.json`. Prefer
-`npm install -g <name>` for everything else.
+Global flags:
 
-## Files
+- `--format yaml|json|toml` - Output format. Default: `yaml`.
+- `--target <id>` - Target selector.
+- `--workspace <path>` - Workspace root path.
+- `--config-dir <PATH>` - Override config directory.
+- `--data-dir <PATH>` - Override data directory.
+- `--state-dir <PATH>` - Override state directory.
+- `--cache-dir <PATH>` - Override cache directory.
+- `--log-dir <PATH>` - Override log directory.
+- `--lock-timeout <SECS>` - Lock acquisition timeout. Default: `30`.
+- `--no-wait` - Do not wait for a workspace lock.
+- `--help` - Show help.
 
-The dot-prefixed repo files listed here are the final target-repository paths.
-Inside the `cli-forge-publish` skill package they are stored under
-installer-safe aliases (`dot-releaserc.json` and `dot-github/...`) and must be
-restored to these dot-prefixed names when the asset pack is adopted.
+Most target-specific commands require `--target <id>` or an active context set
+with `context use`.
 
-- `.releaserc.json` — semantic-release plugin chain
-- `.github/workflows/release.yml` — single release job
-- `.github/actions/setup-build-env/action.yml` — macOS cross-build toolchain
-- `release/config.json` — CLI name, main package name, split-scope policy, target list
-- `npm/main/` — JS shim + published main package template
-- `npm/platforms/` — generated at release time by
-  `scripts/release/sync-platform-packages.mjs`
-- `scripts/release/build-binaries.mjs` — semantic-release `prepare` hook that bumps
-  `Cargo.toml#version`, builds all targets, and creates dist archives + provenance
-- `scripts/release/validate-config.mjs` — shared config validation (fields, split-scope
-  consistency, repository match, placeholder check, platform runtime-only
-  manifests); called by release.yml and sync-platform-packages.mjs
-- `scripts/release/sync-platform-packages.mjs` — semantic-release `prepare` hook
-- `scripts/release/publish-npm-packages.mjs` — semantic-release `publish` hook
-  that publishes every platform package and the main package, each guarded by
-  an `npm view` existence check for idempotent reruns
-- `scripts/release/rehearse.mjs` — local rehearsal: build + sync +
-  `npm publish --dry-run` for every package (no tag, no real publish)
-- `scripts/release/prepublish.mjs` — local real publish for bootstrap
-  versions only; publishes platform packages first, then the main package
-- `scripts/release/ensure-npm-login.mjs` — helper that pauses for interactive
-  `npm login`, relays the verification URL, and resumes prepublish only after
-  local auth succeeds
-- `scripts/install-current-release.sh` — clone-first install helper
-- `package.json` — devDependencies (semantic-release + plugins) only
-- `CHANGELOG.md` — maintained by semantic-release
+## Output And Errors
+
+Successful commands emit a structured envelope in the selected format:
+
+```yaml
+status: ok
+message: "<summary>"
+data: <structured payload>
+```
+
+Errors are structured:
+
+```json
+{
+  "code": "E_ERROR",
+  "message": "description of what went wrong",
+  "source": "main",
+  "format": "json"
+}
+```
+
+Known error codes include `E_ERROR`, `E_GATE_FAILED`, and `E_LOCK_TIMEOUT`.
+
+## Command Groups
+
+| Group                                                                           | Purpose                                                                                                       |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `workspace`                                                                     | Initialize a target workspace and manage phase state.                                                         |
+| `scope`                                                                         | Manage `scope.yaml`.                                                                                          |
+| `functions`, `callgraph`, `types`, `vtables`, `constants`, `strings`, `imports` | Read and curate baseline metadata.                                                                            |
+| `third-party`                                                                   | Record third-party libraries, explicit no-third-party review, pristine sources, and function classifications. |
+| `runtime`                                                                       | Manage `runtime/run-manifest.yaml` and `runtime/run-records/*.yaml`.                                          |
+| `hotpath`                                                                       | Manage `runtime/hotpaths/call-chain.yaml`.                                                                    |
+| `metadata`                                                                      | Manage P3 metadata such as renames and signatures.                                                            |
+| `substitute`                                                                    | Manage P4 substitution records.                                                                               |
+| `git-check`                                                                     | Check whether required artifacts are ready for review when gates ask for it.                                  |
+| `execution-log`                                                                 | Append and inspect execution records.                                                                         |
+| `progress`                                                                      | Helpers for older progress YAML.                                                                              |
+| `gate`                                                                          | Run aggregate gate checks and inspect gate reports.                                                           |
+| `ghidra`                                                                        | Discover Ghidra, import/analyze, export baseline, apply metadata, decompile, and rebuild.                     |
+| `frida`                                                                         | Device, capture, compare, trace, run, and invoke helpers.                                                     |
+| `inspect`                                                                       | Read-only binary inspection helpers.                                                                          |
+| `context`                                                                       | Active target context helpers.                                                                                |
+| `paths`                                                                         | Show resolved workspace and runtime paths.                                                                    |
+| `validate`, `help`                                                              | Validation and help surfaces.                                                                                 |
+
+## Workspace Layout
+
+```text
+targets/<target-id>/
+└── ghidra-projects/
+
+artifacts/<target-id>/
+├── pipeline-state.yaml
+├── scope.yaml
+├── intake/
+├── baseline/
+│   ├── functions.yaml
+│   ├── callgraph.yaml
+│   ├── types.yaml
+│   ├── vtables.yaml
+│   ├── constants.yaml
+│   ├── strings.yaml
+│   └── imports.yaml
+├── runtime/
+│   ├── project/
+│   ├── fixtures/
+│   ├── run-manifest.yaml
+│   ├── run-records/
+│   └── hotpaths/call-chain.yaml
+├── third-party/
+│   ├── identified.yaml
+│   ├── pristine/<library>@<version>/
+│   └── compat/<library>@<version>/
+├── metadata/
+│   ├── renames.yaml
+│   ├── signatures.yaml
+│   ├── types.yaml
+│   ├── constants.yaml
+│   ├── strings.yaml
+│   └── apply-records/
+├── substitution/
+│   ├── template/
+│   ├── next-batch.yaml
+│   └── functions/<fn_id>/
+│       ├── capture.yaml
+│       └── substitution.yaml
+├── gates/
+└── scripts/
+```
+
+`workspace init` creates the base workspace structure and initializes
+`pipeline-state.yaml` plus `scope.yaml`. Later phases populate the remaining
+directories through CLI commands.
+
+## Common Helper Commands
+
+```sh
+# Discover prerequisites
+ghidra-agent-cli ghidra discover
+
+# Create a target workspace
+ghidra-agent-cli workspace init --target libfoo --binary ./libfoo.so
+ghidra-agent-cli --target libfoo scope set --mode full
+
+# Export baseline evidence
+ghidra-agent-cli --target libfoo ghidra import
+ghidra-agent-cli --target libfoo ghidra auto-analyze
+ghidra-agent-cli --target libfoo ghidra export-baseline
+ghidra-agent-cli --target libfoo functions list
+
+# Runtime and hotpath evidence
+ghidra-agent-cli --target libfoo runtime record --key entrypoint --value 0x401000
+ghidra-agent-cli --target libfoo hotpath add --addr 0x401000 --reason runtime
+
+# Metadata enrichment and Ghidra apply
+ghidra-agent-cli --target libfoo metadata enrich-function \
+  --addr 0x401000 \
+  --name main \
+  --prototype 'int(void)'
+ghidra-agent-cli --target libfoo ghidra apply-renames
+ghidra-agent-cli --target libfoo ghidra verify-renames
+ghidra-agent-cli --target libfoo ghidra apply-signatures
+ghidra-agent-cli --target libfoo ghidra verify-signatures
+
+# Selected decompilation and substitution records
+ghidra-agent-cli --target libfoo ghidra decompile --fn-id fn_001 --addr 0x401000
+ghidra-agent-cli --target libfoo substitute add \
+  --fn-id fn_001 \
+  --addr 0x401000 \
+  --replacement 'return 0;'
+
+# Gate checks
+ghidra-agent-cli --target libfoo gate check --phase P1
+ghidra-agent-cli --target libfoo gate list
+```

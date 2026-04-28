@@ -17,7 +17,7 @@
 ## Review Rules
 
 - Baseline type recovery is descriptive, not final.
-- Use this file to capture early object-shape clues before committing semantic
+- Use this file to capture early object-shape clues before recording semantic
   names or field meanings.
 - Stable semantic refinements belong in `renaming-log.md` and
   `reconstruction-log.md`.

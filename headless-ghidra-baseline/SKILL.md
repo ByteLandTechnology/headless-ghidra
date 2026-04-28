@@ -1,6 +1,6 @@
 ---
 name: "headless-ghidra-baseline"
-description: "P1 sub-skill: run Ghidra import/analysis, export baseline YAML metadata, and prepare runtime observations without decompiling function bodies."
+description: "P1 phase skill for Headless Ghidra baseline and runtime evidence. Use after P0 when the target must be imported into Ghidra, auto-analyzed, exported to baseline YAML, and given reproducible runtime or hotpath observations without decompiling function bodies."
 phase: "P1"
 ---
 

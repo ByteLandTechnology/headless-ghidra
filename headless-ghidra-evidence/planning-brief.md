@@ -1,23 +1,22 @@
-phase_id: evidence_replay
-artifact_purpose: Define the portable evidence extraction and replay contract used to shape speckit planning and review generated planning artifacts.
-primary_consumer: downstream_user
-constrained_outputs:
+# Evidence Planning Brief
 
-- spec.md
-- plan.md
-- tasks.md
-  audit_scope:
-- spec.md
-- plan.md
-- tasks.md
-  example_path: .agents/skills/headless-ghidra-evidence/examples/evidence-speckit-handoff.md
+## Brief Metadata
 
-# When To Use This Phase Skill
+| Field               | Value                                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Phase id            | `evidence_replay`                                                                                                                   |
+| Purpose             | Define the portable evidence extraction and replay contract used to shape speckit planning and review generated planning artifacts. |
+| Primary consumer    | Downstream user                                                                                                                     |
+| Constrained outputs | `spec.md`, `plan.md`, `tasks.md`                                                                                                    |
+| Audit scope         | `spec.md`, `plan.md`, `tasks.md`                                                                                                    |
+| Example handoff     | [Evidence Speckit Handoff](./examples/evidence-speckit-handoff.md)                                                                  |
+
+## When To Use This Phase Skill
 
 Use this brief when the intake phase is already stable and the planning request
 must preserve how evidence is extracted, replayed, and validated.
 
-# Non-Negotiable Reverse-Engineering Constraints
+## Non-Negotiable Reverse-Engineering Constraints
 
 - Headless-only scope. Evidence and replay steps must not require a GUI-only
   session.
@@ -33,7 +32,7 @@ must preserve how evidence is extracted, replayed, and validated.
 - No downstream extension or constitution change is required. The contract
   remains portable and only allows stricter local overlays.
 
-# Required Planning Inputs
+## Required Planning Inputs
 
 - `target_context`: normalized target and scope from intake
 - `evidence_sources`: exports, manifests, decompiled output, or other artifacts
@@ -44,7 +43,7 @@ must preserve how evidence is extracted, replayed, and validated.
   the evidence contract intact
 - `local_rule_overlay`: optional stricter local rules
 
-# Planning Brief Body
+## Planning Brief Body
 
 Use this body directly or adapt it with the same meaning:
 
@@ -59,7 +58,7 @@ Target context:
 
 Evidence sources:
 
-- [fill in tracked exports, manifests, or artifact surfaces]
+- [fill in reviewed exports, manifests, or artifact surfaces]
 
 Replay surface:
 
@@ -83,13 +82,13 @@ Validation expectations:
   advancement, automatic default selection, and secondary metrics visible.
 ```
 
-# How To Supply The Brief To Speckit
+## How To Supply The Brief To Speckit
 
 - Supply [`./planning-brief.md`](./planning-brief.md) directly.
 - Or paste the `Planning Brief Body` inline into the `speckit` request.
 - The transport mode must preserve the same evidence and replay obligations.
 
-# Audit Checklist For Generated Artifacts
+## Audit Checklist For Generated Artifacts
 
 - `spec.md` identifies the evidence sources and the reason they matter.
 - `plan.md` preserves replayable commands, manifests, or regeneration surfaces.
@@ -102,11 +101,11 @@ Validation expectations:
 - If the evidence contract is weakened, refine or regenerate the planning
   artifacts instead of weakening the contract.
 
-# Local Rule Policy
+## Local Rule Policy
 
-- Local repository rules may require extra artifact tracking, review evidence,
+- Local project rules may require extra artifact review, evidence notes,
   or naming conventions.
-- Local repository rules may not remove evidence requirements, replace replay
+- Local project rules may not remove evidence requirements, replace replay
   obligations with informal notes, or hide outputs outside reviewable Markdown.
 - Treat stricter local rules as additive overlays.
 - Treat any local rule that weakens the evidence contract as invalid.

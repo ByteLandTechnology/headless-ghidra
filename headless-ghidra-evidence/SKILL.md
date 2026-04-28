@@ -1,6 +1,6 @@
 ---
 name: "headless-ghidra-evidence"
-description: "P2 sub-skill: identify third-party code, record pristine sources, and synthesize frontier evidence into YAML outputs."
+description: "P2 phase skill for Headless Ghidra third-party evidence. Use after P1 to review baseline/runtime artifacts, identify or rule out third-party code, record pristine sources, classify functions, and capture evidence before metadata recovery."
 phase: "P2"
 ---
 
@@ -49,7 +49,7 @@ enrichment. Source download or acquisition is outside the CLI; the CLI records
 
 - `artifacts/<target-id>/third-party/identified.yaml`
 - `artifacts/<target-id>/third-party/pristine/<library>@<version>/`
-- Optional compatibility changes under
+- Optional local adaptation changes under
   `artifacts/<target-id>/third-party/compat/<library>@<version>/`
 
 ## Exit Expectations
@@ -60,7 +60,7 @@ enrichment. Source download or acquisition is outside the CLI; the CLI records
   code.
 - Each recorded third-party library has a local `source_path` and a pristine
   directory under `third-party/pristine/`.
-- Pristine source directories are kept unmodified; compatibility edits live
+- Pristine source directories are kept unmodified; local adaptation edits live
   under `third-party/compat/`.
 - The next phase has enough version and function-classification evidence to
   recover names, signatures, and types.

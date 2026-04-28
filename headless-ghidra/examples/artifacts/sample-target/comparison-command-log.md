@@ -2,7 +2,7 @@
 
 ## Status
 
-- Artifact state: Implemented tracked reproducibility surface for incremental
+- Artifact state: Implemented reviewable reproducibility surface for incremental
   compare
 - Validated now:
   - each selected decompilation step has a place to record how the original and
@@ -50,5 +50,5 @@
 
 ## Current Local Observation
 
-This tracked sample file defines the required compare record, but no concrete
+This example file defines the required compare record, but no concrete
 compare case has been replayed yet for `sample-target`.

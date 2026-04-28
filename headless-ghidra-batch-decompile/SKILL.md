@@ -1,6 +1,6 @@
 ---
 name: "headless-ghidra-batch-decompile"
-description: "P4 sub-skill: substitute selected functions by applying metadata, decompiling through Ghidra, and recording per-function YAML outputs."
+description: "P4 phase skill for Headless Ghidra selected function substitution. Use after P3 when an approved batch of functions should have metadata applied, be decompiled through Ghidra, and be recorded as per-function capture/substitution YAML."
 phase: "P4"
 ---
 
@@ -62,7 +62,7 @@ clear P3 names and signatures.
 - Do not modify artifacts for functions outside the active batch.
 - Do not bypass `ghidra-agent-cli` for supported apply/verify/decompile,
   substitution, fixture, or gate actions.
-- Do not modify pristine third-party source; place compatibility changes under
+- Do not modify pristine third-party source; place local adaptation changes under
   `third-party/compat/`.
 - Do not create or run a new Ghidra script if the CLI lacks a capability; pause
   and ask the user first.

@@ -98,5 +98,5 @@ bf4f6a708a455b095839028fa4c343a7b7556e33  archive-replay-command-record.md
 - The review surfaces under
   `.work/ghidra-artifacts/sample-target-archive-runtime/review/` are live
   runtime outputs.
-- The tracked sample replay record under `examples/artifacts/sample-target/` is
+- The example replay record under `examples/artifacts/sample-target/` is
   a reviewed example, not the default live destination.

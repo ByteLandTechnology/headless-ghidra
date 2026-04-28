@@ -24,7 +24,7 @@
 | `archive_observation`      | `current ar archive`                                                                       | Captured from the local `file` observation during replay.                               |
 | `normalization_wrapper_id` | `normalize-ar-archive`                                                                     | Canonical wrapper entrypoint for archive normalization.                                 |
 | `runtime_artifact_root`    | `.work/ghidra-artifacts/sample-target-archive-runtime/`                                    | Runtime-generated members and review outputs stay under `.work/`.                       |
-| `replay_record_path`       | `<installed-skill-root>/examples/artifacts/sample-target/archive-replay-command-record.md` | Use the tracked sample replay record to rerun the same normalization pass.              |
+| `replay_record_path`       | `<installed-skill-root>/examples/artifacts/sample-target/archive-replay-command-record.md` | Use the example replay record to rerun the same normalization pass.                     |
 | `overall_status`           | `members_ready`                                                                            | Must match the handoff summary and any stop condition.                                  |
 
 ## Recognition Evidence

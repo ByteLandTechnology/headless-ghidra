@@ -1,6 +1,6 @@
 ---
 name: "headless-ghidra-discovery"
-description: "P3 sub-skill: enrich function names, signatures, types, constants, strings, and hotpath metadata in YAML before serialized CLI apply."
+description: "P3 phase skill for Headless Ghidra metadata discovery. Use after P2, or after a P4 batch exposes missing context, to enrich function names, signatures, types, constants, strings, and hotpath metadata in YAML before serialized CLI apply."
 phase: "P3"
 ---
 

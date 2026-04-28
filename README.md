@@ -1,113 +1,88 @@
 # Headless Ghidra Skill Family
 
-This repository defines a YAML-first, headless-only decompilation workflow
-around `ghidra-agent-cli`. A global orchestrator skill manages P0–P4, while the
-CLI subproject provides the supported command surface and artifact semantics.
+Headless Ghidra is a Ghidra reverse-engineering skill family for agents. Install
+the skill family, then ask your agent to use `headless-ghidra`; the bundled
+`ghidra-agent-cli` is invoked by the skills and is not something normal users
+install, build, or run manually.
 
-## Documentation Boundaries
+Translations: [简体中文](./README.zh-CN.md) | [日本語](./README.ja-JP.md)
 
-- [`ghidra-agent-cli/SKILL.md`](./ghidra-agent-cli/SKILL.md): CLI usage,
-  command groups, flags, output envelope, workspace layout, and YAML artifact
-  meanings.
-- [`headless-ghidra/SKILL.md`](./headless-ghidra/SKILL.md): the authoritative
-  P0–P4 workflow, routing, and orchestration rules.
-- `headless-ghidra-*/SKILL.md`: per-phase inputs, outputs, required CLI
-  commands, and phase-local constraints.
+## Install
 
-## Architecture
+Recommended in Codex:
 
 ```text
-headless-ghidra                       ← global orchestrator
-├── ghidra-agent-cli                  ← bundled CLI/release subproject
-├── headless-ghidra-intake            ← P0 intake and scope
-├── headless-ghidra-baseline          ← P1 baseline and runtime setup
-├── headless-ghidra-evidence          ← P2 third-party identification
-├── headless-ghidra-discovery         ← P3 metadata enrichment
-├── headless-ghidra-batch-decompile   ← P4 function substitution
-├── headless-ghidra-scope             ← deprecated P0.5 compatibility alias
-└── headless-ghidra-frida-verify      ← deprecated P6 compatibility alias
+$skill-installer install all skills from https://github.com/ByteLandTechnology/headless-ghidra
 ```
 
-## Pipeline Summary
+This should install 7 sibling skills: `headless-ghidra`, the 5 P0-P4 phase
+skills, and the bundled helper skill `ghidra-agent-cli`. Restart Codex after
+installation.
+
+Use the `skills` CLI to install every skill in this skill family to every
+supported agent at once:
+
+```sh
+npx --yes skills add https://github.com/ByteLandTechnology/headless-ghidra --all
+```
+
+Here, `--all` is shorthand for `--skill '*' --agent '*' --yes`.
+
+To install every skill for one agent only:
+
+```sh
+npx --yes skills add https://github.com/ByteLandTechnology/headless-ghidra --agent codex --skill '*' --yes
+npx --yes skills add https://github.com/ByteLandTechnology/headless-ghidra --agent claude-code --skill '*' --yes
+```
+
+## Use
+
+Prerequisites:
+
+- Ghidra is installed locally.
+- The target binary is in a workspace path the agent can read.
+- Frida is optional and only needed for runtime observation.
+
+Start a new analysis:
 
 ```text
-P0 Intake → P1 Baseline+Runtime → P2 Third-Party → [P3 Metadata Enrichment → P4 Function Substitution]*
+Use the headless-ghidra skill to analyze ./sample-target. Start at P0 intake,
+choose a stable target id, and stop after each phase gate so I can review the
+artifacts.
 ```
 
-- P0–P2 are one-time initialization, runtime setup, and third-party setup.
-- P3–P4 form the iterative metadata and substitution loop.
-- `ghidra-agent-cli` is the required control-plane interface for supported
-  operations.
-- `ghidra-agent-cli gate check` is the authoritative gate validation for all
-  pipeline phases (P0–P4). The legacy `gate-check.sh` has been removed.
-- Old P0.5, P5, and P6 docs or CLI aliases are compatibility-only and must not
-  be presented as primary stages.
-
-## Shared Workspace Model
+Resume an existing target:
 
 ```text
-targets/<target-id>/
-└── ghidra-projects/
-
-artifacts/<target-id>/
-├── pipeline-state.yaml
-├── scope.yaml
-├── intake/
-├── baseline/
-│   ├── functions.yaml
-│   ├── callgraph.yaml
-│   ├── types.yaml
-│   ├── vtables.yaml
-│   ├── constants.yaml
-│   ├── strings.yaml
-│   └── imports.yaml
-├── runtime/
-│   ├── project/
-│   ├── fixtures/
-│   ├── run-manifest.yaml
-│   ├── run-records/
-│   └── hotpaths/call-chain.yaml
-├── third-party/
-│   ├── identified.yaml
-│   ├── pristine/<library>@<version>/
-│   └── compat/<library>@<version>/
-├── metadata/
-│   ├── renames.yaml
-│   ├── signatures.yaml
-│   ├── types.yaml
-│   ├── constants.yaml
-│   ├── strings.yaml
-│   └── apply-records/
-├── substitution/
-│   ├── template/
-│   ├── next-batch.yaml
-│   └── functions/<fn_id>/
-├── gates/
-└── scripts/
+Resume the same target and continue through P1 baseline.
+Show me the current pipeline state and the artifacts I should review.
+Continue with P2 evidence, but do not classify uncertain third-party code
+without showing me the evidence first.
+Run the next P3/P4 iteration for the selected hotpath functions.
 ```
 
-## Core Rules
+Runtime output belongs in the active workspace under `targets/<target-id>/` and
+`artifacts/<target-id>/`, not in the installed skill directory.
 
-- Headless-only workflows.
-- Ghidra is the only approved decompilation backend.
-- All workflow artifacts live under `artifacts/<target-id>/`.
-- YAML artifacts are created, updated, and validated through
-  `ghidra-agent-cli`.
-- The CLI must not automatically create git commits.
-- Gate transitions require relevant artifacts to be tracked or staged in git.
-- Supported workspace, metadata, Ghidra, Frida, progress, and gate operations
-  must go through `ghidra-agent-cli`.
-- All Ghidra project operations must go through `ghidra-agent-cli`. If the CLI
-  lacks a required capability, pause and ask the user before creating or running
-  a new Ghidra script.
-- Phase docs may define additional workflow logic, but they should reference the
-  YAML artifacts above instead of inventing a parallel alternate runtime surface.
+## Documentation Map
 
-## Repository Notes
+| If you want to...                                  | Read                                                                                                                                                                                |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Install the skill family and start a run           | This README                                                                                                                                                                         |
+| Understand how the entry skill routes work         | [Orchestrator Skill Guide](./headless-ghidra/README.md)                                                                                                                             |
+| Run or review a specific phase                     | The matching P0-P4 phase README below                                                                                                                                               |
+| Choose walkthroughs, playbooks, or script guidance | [Examples And Guides](./headless-ghidra/examples/README.md)                                                                                                                         |
+| Choose what to analyze first                       | [Analysis Selection Playbook](./headless-ghidra/examples/analysis-selection-playbook.md)                                                                                            |
+| See a complete analysis narrative                  | [Reverse Engineering Walkthrough](./headless-ghidra/examples/reverse-engineering-walkthrough.md)                                                                                    |
+| Author or review custom Ghidra scripts             | [Ghidra Script Authoring](./headless-ghidra/examples/ghidra-script-authoring.md) and [Ghidra Script Review Checklist](./headless-ghidra/examples/ghidra-script-review-checklist.md) |
+| Debug agent command syntax or output               | [CLI Tool Reference](./ghidra-agent-cli/README.md)                                                                                                                                  |
 
-- `ghidra-agent-cli/` is tracked as a normal subdirectory of this repository.
-- The preserved nested git metadata lives at `ghidra-agent-cli/.git-local-backup/`
-  and is ignored by the outer repo.
-- The authoritative release workflow/action live at
-  `.github/workflows/release.yml` and `.github/actions/setup-build-env/action.yml`,
-  operating on the `ghidra-agent-cli/` subdirectory.
+## Phases
+
+| Phase | README                                                         | Purpose                                                                     |
+| ----- | -------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| P0    | [Intake](./headless-ghidra-intake/README.md)                   | Confirm the target, initialize the workspace, and set scope.                |
+| P1    | [Baseline](./headless-ghidra-baseline/README.md)               | Import into Ghidra, export baseline artifacts, and record runtime evidence. |
+| P2    | [Evidence](./headless-ghidra-evidence/README.md)               | Identify third-party code and evidence sources.                             |
+| P3    | [Discovery](./headless-ghidra-discovery/README.md)             | Enrich names, signatures, types, constants, and strings.                    |
+| P4    | [Batch Decompile](./headless-ghidra-batch-decompile/README.md) | Apply metadata and decompile selected functions.                            |

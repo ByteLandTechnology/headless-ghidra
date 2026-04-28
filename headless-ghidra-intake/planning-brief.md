@@ -1,38 +1,37 @@
-phase_id: intake_init
-artifact_purpose: Define the portable intake and initialization contract used to shape speckit planning and review generated planning artifacts.
-primary_consumer: downstream_user
-constrained_outputs:
+# Intake Planning Brief
 
-- spec.md
-- plan.md
-- tasks.md
-  audit_scope:
-- spec.md
-- plan.md
-- tasks.md
-  example_path: .agents/skills/headless-ghidra-intake/examples/intake-speckit-handoff.md
+## Brief Metadata
 
-# When To Use This Phase Skill
+| Field               | Value                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Phase id            | `intake_init`                                                                                                                  |
+| Purpose             | Define the portable intake and initialization contract used to shape speckit planning and review generated planning artifacts. |
+| Primary consumer    | Downstream user                                                                                                                |
+| Constrained outputs | `spec.md`, `plan.md`, `tasks.md`                                                                                               |
+| Audit scope         | `spec.md`, `plan.md`, `tasks.md`                                                                                               |
+| Example handoff     | [Intake Speckit Handoff](./examples/intake-speckit-handoff.md)                                                                 |
+
+## When To Use This Phase Skill
 
 Use this brief before deeper reverse-engineering work starts, when the team
 needs to normalize the target, define the project-init surface, and make the
-first planning request portable across repositories.
+first planning request portable across workspaces.
 
-# Non-Negotiable Reverse-Engineering Constraints
+## Non-Negotiable Reverse-Engineering Constraints
 
 - Headless-only scope. Do not depend on GUI walkthroughs or manual Ghidra UI
   exploration.
 - Evidence-backed claims. Intake facts must come from the provided target,
-  repository-tracked manifests, or other observable evidence.
+  reviewed manifests, or other observable evidence.
 - Reproducible workflow expectations. The planning artifacts must preserve
   replayable setup assumptions, workspace naming, and analyst inputs.
 - Reviewable Markdown outputs. The resulting `spec.md`, `plan.md`, and
   `tasks.md` must be readable and reviewable as Markdown.
 - No downstream extension or constitution change is required. The brief must
-  remain usable as-is in another repository, with local rules only able to
+  remain usable as-is in another project, with local rules only able to
   tighten the contract.
 
-# Required Planning Inputs
+## Required Planning Inputs
 
 - `target_identity`: target name, sample type, and provenance
 - `workflow_scope`: what the intake phase needs the plan to cover
@@ -44,7 +43,7 @@ first planning request portable across repositories.
 - `local_rule_overlay`: optional local rules that supplement or tighten the
   contract without weakening it
 
-# Planning Brief Body
+## Planning Brief Body
 
 Use this body directly or adapt it with the same meaning:
 
@@ -83,14 +82,14 @@ Validation expectations:
   them.
 ```
 
-# How To Supply The Brief To Speckit
+## How To Supply The Brief To Speckit
 
 - Supply [`./planning-brief.md`](./planning-brief.md) as the canonical artifact.
 - Or paste the `Planning Brief Body` inline into the `speckit` request.
 - The transport mode must not change the contract meaning or remove any intake
   constraint.
 
-# Audit Checklist For Generated Artifacts
+## Audit Checklist For Generated Artifacts
 
 - `spec.md` preserves target identity, scope boundaries, and deliverable types.
 - `plan.md` keeps setup assumptions replayable and consistent with a
@@ -102,11 +101,11 @@ Validation expectations:
 - If a generated artifact weakens the intake contract, the reviewer must refine
   or regenerate the planning artifacts rather than soften this contract.
 
-# Local Rule Policy
+## Local Rule Policy
 
-- Local repository rules may add stricter naming, validation, or documentation
+- Local project rules may add stricter naming, validation, or documentation
   requirements.
-- Local repository rules may not replace or weaken the intake contract's
+- Local project rules may not replace or weaken the intake contract's
   headless-only, evidence-backed, reproducible, or Markdown-reviewable
   constraints.
 - Treat a stricter local rule as an additive overlay.

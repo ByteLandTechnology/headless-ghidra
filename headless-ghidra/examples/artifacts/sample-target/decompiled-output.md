@@ -63,7 +63,7 @@
 
 ## Review Rules
 
-- Do not commit a function here unless its role, candidate name, and candidate
+- Do not add a function here unless its role, candidate name, and candidate
   prototype are already evidence-backed.
 - Do not batch-export exploratory decompilation.
 - Do not mark a step complete unless the matching compare case has been

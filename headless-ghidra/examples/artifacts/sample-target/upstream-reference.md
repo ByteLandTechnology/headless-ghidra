@@ -3,25 +3,25 @@
 ## Purpose
 
 This sample shows the canonical source-comparison intake record. The current
-worked example now points to one runtime-validated happy path using a tracked
+worked example now points to one runtime-validated happy path using a reviewed
 `zlib` source reference and a locally reviewed `minigzip` binary.
 
 ## Current Review Record
 
-| Field              | Value                        | Review Notes                                                                                           |
-| ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `project_slug`     | `zlib`                       | Runtime-validated against a tracked review subset under `third_party/upstream/zlib/`.                  |
-| `probable_version` | `1.2.11`                     | Derived from the tracked `README` and `zlib.h` in the reviewed source subset.                          |
-| `reference_mode`   | `tracked_reference`          | The current happy path uses the preferred tracked review surface.                                      |
-| `reference_path`   | `third_party/upstream/zlib/` | The tracked subset includes `README`, `zlib.h`, and `test/minigzip.c`.                                 |
-| `reference_status` | `accepted`                   | The current review uses a tracked source reference with concrete binary-side and source-side evidence. |
-| `fallback_reason`  | `not_applicable`             | The happy path does not depend on a fallback local source tree.                                        |
+| Field              | Value                        | Review Notes                                                                                            |
+| ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `project_slug`     | `zlib`                       | Runtime-validated against a review subset under `third_party/upstream/zlib/`.                           |
+| `probable_version` | `1.2.11`                     | Derived from the reviewed `README` and `zlib.h` in the source subset.                                   |
+| `reference_mode`   | `review_reference`           | The current happy path uses the preferred review surface.                                               |
+| `reference_path`   | `third_party/upstream/zlib/` | The reviewed subset includes `README`, `zlib.h`, and `test/minigzip.c`.                                 |
+| `reference_status` | `accepted`                   | The current review uses a reviewed source reference with concrete binary-side and source-side evidence. |
+| `fallback_reason`  | `not_applicable`             | The happy path does not depend on a fallback local source tree.                                         |
 
 ## Discovery Evidence
 
-- `third_party/upstream/zlib/REFERENCE.md` records the tracked source subset
+- `third_party/upstream/zlib/REFERENCE.md` records the reviewed source subset
   copied from local `zlib` commit `cdb955ce`.
-- Ghidra baseline export succeeded on 2026-03-29 for a maintainer-local
+- Ghidra baseline export succeeded on 2026-03-29 for a local validation
   `minigzip` build with target id `zlib-minigzip-20260329`.
 - `.work/ghidra-artifacts/zlib-minigzip-20260329/function-names.md` records
   `_gz_compress`, `_gz_uncompress`, `_file_compress`, `_file_uncompress`, and
@@ -38,10 +38,10 @@ worked example now points to one runtime-validated happy path using a tracked
 
 1. Expand `third_party/upstream/zlib/` if future reviews need claims about
    deeper library internals beyond `minigzip.c` and `zlib.h`.
-2. Re-run the baseline export if the validated `minigzip` binary or tracked
+2. Re-run the baseline export if the validated `minigzip` binary or reviewed
    source subset changes.
 3. Record any future modified findings if a rebuilt binary diverges from the
-   tracked reference.
+   review reference.
 
 ## Status Decision Guide
 

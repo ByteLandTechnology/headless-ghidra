@@ -2,7 +2,7 @@
 
 ## Status
 
-- Artifact state: Registered tracked mutation manifest for signature replay
+- Artifact state: Registered review manifest for signature replay
 - Consumed by:
   - `ApplyFunctionSignatures.java` as a supported `metadata_updating` script
   - `VerifyFunctionSignatures.java` as a supported `verification_audit` script
@@ -37,7 +37,7 @@
 - Use `void` for zero-parameter functions and `...` as the final token for
   varargs.
 - `Calling Convention` must stay explicit whenever the change depends on it.
-- `Prior Evidence` must cite tracked artifacts, not intuition alone.
+- `Prior Evidence` must cite reviewed artifacts, not intuition alone.
 - `Linked Selection` must identify the target-selection record that made this
   mutation the next allowed step.
 - Runtime replay should use a workspace copy under
@@ -45,5 +45,5 @@
 
 ## Current Local Observation
 
-This tracked sample file records the registered manifest surface. Local replay
+This example file records the registered manifest surface. Local replay
 validation is captured separately in `latest-version-validation.md`.

@@ -14,7 +14,7 @@ validated against `third_party/upstream/zlib/` and the locally reviewed
 - Required status before this artifact exists: `accepted` or `qualified`
 - Current sample status: `accepted`
 - Current reference path: `third_party/upstream/zlib/`
-- Reviewer caveat: the tracked reference is a reviewed subset, so deeper
+- Reviewer caveat: the review reference is a reviewed subset, so deeper
   library-internal claims should expand the reference before they are treated
   as fully inherited or modified.
 
@@ -27,7 +27,7 @@ validated against `third_party/upstream/zlib/` and the locally reviewed
 | `SC-E3` | `.work/ghidra-artifacts/zlib-minigzip-20260329/imports-and-libraries.md` | Records the imported `gz*` API family and linked `libz` path.                      |
 | `SC-E4` | `third_party/upstream/zlib/test/minigzip.c`                              | Contains the reviewed helper functions and user-facing strings used by the binary. |
 | `SC-E5` | `third_party/upstream/zlib/zlib.h`                                       | Contains the reviewed `gz*` API reference used by the binary.                      |
-| `SC-E6` | `third_party/upstream/zlib/REFERENCE.md`                                 | Records the provenance and scope of the tracked reference subset.                  |
+| `SC-E6` | `third_party/upstream/zlib/REFERENCE.md`                                 | Records the provenance and scope of the review reference subset.                   |
 
 ## Inherited Findings
 
@@ -43,9 +43,9 @@ No concrete modified findings were observed in this runtime validation pass.
 
 ## Unresolved Findings
 
-| finding_id       | scope_area                         | claim_summary                                                                                                                                                                                                             | supporting_evidence                | reviewer_confidence | follow_up_question                                                                                                 |
-| ---------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `unresolved-001` | `linked libz implementation depth` | This pass validates the `minigzip` entry program and the reviewed `gz*` API surface, but it does not yet claim that every internal `libz` implementation detail has been compared against the full upstream library tree. | `SC-E3`, `SC-E4`, `SC-E5`, `SC-E6` | `medium`            | Should the tracked reference expand beyond `minigzip.c` and `zlib.h` before making deeper library-internal claims? |
+| finding_id       | scope_area                         | claim_summary                                                                                                                                                                                                             | supporting_evidence                | reviewer_confidence | follow_up_question                                                                                                |
+| ---------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `unresolved-001` | `linked libz implementation depth` | This pass validates the `minigzip` entry program and the reviewed `gz*` API surface, but it does not yet claim that every internal `libz` implementation detail has been compared against the full upstream library tree. | `SC-E3`, `SC-E4`, `SC-E5`, `SC-E6` | `medium`            | Should the review reference expand beyond `minigzip.c` and `zlib.h` before making deeper library-internal claims? |
 
 ## Reviewer Rules
 

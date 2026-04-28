@@ -34,7 +34,7 @@
 Rules:
 
 - Every deeper step needs a new or updated selection record.
-- `triggering_evidence` must cite tracked artifacts or explicit observed facts.
+- `triggering_evidence` must cite reviewed artifacts or explicit observed facts.
 - `deviation_reason` is required whenever outside-in order is intentionally
   broken.
 - `replacement_boundary` must stay scoped to the current incremental step.

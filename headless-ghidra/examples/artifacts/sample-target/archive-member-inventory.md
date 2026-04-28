@@ -30,7 +30,7 @@
   the archive-level workflow continues.
 - Runtime-generated extracted members live under
   `.work/ghidra-artifacts/sample-target-archive-runtime/normalized-members/`,
-  never under the tracked skill package.
+  never under the installed skill directory.
 - The failed sample row documents the required review posture for extraction
   failures even when the local happy-path replay completed without a failed
   member.

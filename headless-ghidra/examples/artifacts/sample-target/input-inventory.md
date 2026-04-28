@@ -70,12 +70,12 @@
 - `signature-log.md`
 - `decompiled-output.md`
 
-## Untracked Inputs
+## External Inputs
 
 - generated Ghidra project files under `.work/ghidra-projects/sample-target/`
 - generated analysis artifacts under `.work/ghidra-artifacts/sample-target/`
 - fallback local upstream clones under `.work/upstream-sources/<project-slug>/`
-- transient logs unless intentionally summarized into a tracked artifact
+- transient logs unless intentionally summarized into a reviewed artifact
 
 ## Analyst Checklist
 

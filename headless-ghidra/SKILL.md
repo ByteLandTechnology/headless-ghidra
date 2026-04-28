@@ -1,13 +1,14 @@
 ---
 name: "headless-ghidra"
-description: "Global orchestrator for the headless Ghidra YAML-first decompilation pipeline. Reads artifacts/<target>/pipeline-state.yaml, dispatches P0–P4 phase skills, executes programmatic gate checks, and manages user interaction. Performs zero analysis work itself."
+description: "Entry skill for the Headless Ghidra YAML-first reverse-engineering pipeline. Use when the user asks to analyze, decompile, triage, resume, or iterate on a binary target with Ghidra/headless-ghidra. Reads artifacts/<target>/pipeline-state.yaml, routes P0–P4 phase skills, runs gate checks, and manages review pauses. Performs zero analysis work itself."
 ---
 
 # Headless Ghidra — Global Orchestrator
 
-This skill is the workflow authority for the repository. It defines the P0–P4
-sequence, dispatch rules, and artifact hand-off points. `ghidra-agent-cli`
-remains the tool authority for command syntax and YAML artifact semantics.
+This skill is the workflow coordinator for the skill family. It defines the
+P0–P4 sequence, dispatch rules, and artifact hand-off points.
+`ghidra-agent-cli` remains the tool reference for command syntax and YAML
+artifact semantics.
 
 ## Required Shared Tool Contract
 
@@ -20,7 +21,8 @@ remains the tool authority for command syntax and YAML artifact semantics.
 - All workflow artifacts must live under `artifacts/<target-id>/`.
 - YAML artifacts must be created, updated, and validated by `ghidra-agent-cli`.
 - The CLI must not automatically create git commits.
-- Gate transitions require relevant artifacts to be tracked or staged in git.
+- Gate transitions require relevant artifacts to exist on disk and be ready for
+  user review.
 - All Ghidra project operations must go through `ghidra-agent-cli`. If the CLI
   lacks a required capability, pause and ask the user before creating or running
   a new Ghidra script.
@@ -39,14 +41,9 @@ P0 Intake → P1 Baseline+Runtime → P2 Third-Party → [P3 Metadata Enrichment
 | P3    | [`headless-ghidra-discovery`](../headless-ghidra-discovery/SKILL.md)             | Enrich names, signatures, types, constants, strings, and selected hotpath metadata  | `metadata/*.yaml`, `metadata/apply-records/`                                                                          |
 | P4    | [`headless-ghidra-batch-decompile`](../headless-ghidra-batch-decompile/SKILL.md) | Substitute selected functions through metadata application and Ghidra decompilation | `substitution/next-batch.yaml`, `substitution/functions/<fn_id>/`                                                     |
 
-Deprecated compatibility-only aliases:
-
-- [`headless-ghidra-scope`](../headless-ghidra-scope/SKILL.md) preserves old P0.5 scope wording; scope is now part of P0.
-- [`headless-ghidra-frida-verify`](../headless-ghidra-frida-verify/SKILL.md) preserves old P6 verification wording; runtime observations are now part of P1/P4 hand-offs.
-
 ## Shared Artifact Contract
 
-All phases work inside this repository-local layout:
+All phases work inside this active workspace layout:
 
 ```text
 targets/<target-id>/ghidra-projects/
@@ -96,7 +93,6 @@ record and relies on the phase-owned YAML artifacts above for hand-offs.
 ## Gate Policy
 
 - P0–P4 are the only primary pipeline transitions.
-- P0.5, P5, and P6 gates may exist only as deprecated compatibility aliases.
 - `ghidra-agent-cli gate check` is the authoritative gate validation for all
   pipeline phases (P0–P4). The legacy `gate-check.sh` has been removed.
 

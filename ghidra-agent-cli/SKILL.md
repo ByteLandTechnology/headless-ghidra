@@ -7,13 +7,16 @@ description: "Rust CLI reference for the headless-ghidra pipeline. Covers comman
 
 ## Description
 
-`ghidra-agent-cli` is the shared Rust CLI for this repository. It owns the
-command tree, workspace layout, YAML artifact semantics, output envelope, and
-runtime behavior for supported Ghidra, Frida, progress, and gate operations.
+`ghidra-agent-cli` is the bundled helper for the Headless Ghidra skill family.
+It owns the command tree, workspace layout, YAML artifact semantics, output
+envelope, and runtime behavior for supported Ghidra, Frida, progress, and gate
+operations.
 
-This skill documents **how to use the CLI**. It does **not** define the P0–P4
-workflow order, stage routing, or orchestration policy. Those are defined by
-`headless-ghidra/SKILL.md` and the per-phase skills.
+This skill documents the helper command semantics for agents. It does **not**
+define the P0–P4 workflow order, stage routing, or orchestration policy. Those
+are defined by `headless-ghidra/SKILL.md` and the per-phase skills. Normal users
+install and use the skill family; they do not manually install, build, or run
+this CLI during the workflow.
 
 ## Prerequisites
 
@@ -21,35 +24,23 @@ workflow order, stage routing, or orchestration policy. Those are defined by
 - Local Ghidra installation discoverable by `ghidra-agent-cli ghidra discover`
 - Optional Frida installation for `frida *` commands
 
-## Installation
+## Availability
 
 <!-- SEMANTIC_RELEASE_VERSION -->
 
-Install the matching CLI version into the skill directory (not global):
+The helper is installed with the skill family and must remain a sibling of
+`headless-ghidra` and the phase skills. If `ghidra-agent-cli` is unavailable,
+ask the user to reinstall or refresh the whole skill family rather than
+installing a separate CLI package inside the target workspace.
 
-```sh
-cd <skill-directory>
-npm install ghidra-agent-cli@1.6.4
-```
-
-This creates `node_modules/.bin/ghidra-agent-cli` — a Node.js wrapper that
-resolves the correct platform-specific binary via optional dependencies
-(`@cli-forge-bin/ghidra-agent-cli-<os>-<cpu>`). Invoke via the full path:
-
-```sh
-./node_modules/.bin/ghidra-agent-cli [COMMAND] [FLAGS]
-```
-
-The version in the `npm install` command is updated automatically by
-semantic-release during publish.
+Release-managed helper package version: `ghidra-agent-cli@1.6.4`. This marker
+is packaging metadata; do not ask users to install it manually during an
+analysis workflow.
 
 ## Invocation
 
 ```sh
 ghidra-agent-cli [GLOBAL FLAGS] <COMMAND> [COMMAND FLAGS]
-
-# Development
-cargo run -- [GLOBAL FLAGS] <COMMAND> [COMMAND FLAGS]
 ```
 
 ## Input
@@ -111,7 +102,7 @@ Known codes:
 | `hotpath`                                                                             | Manage `runtime/hotpaths/call-chain.yaml`                                                                             |
 | `metadata`                                                                            | Manage P3 metadata YAML such as `metadata/renames.yaml` and `metadata/signatures.yaml`                                |
 | `substitute`                                                                          | Manage P4 substitution records under `substitution/functions/<fn_id>/`                                                |
-| `git-check`                                                                           | Validate artifact YAML files are tracked or staged in git                                                             |
+| `git-check`                                                                           | Validate artifact YAML files are ready for review when a gate asks for it                                             |
 | `execution-log`                                                                       | Append and inspect execution records                                                                                  |
 | `progress`                                                                            | Compatibility helpers for legacy decompilation progress YAML                                                          |
 | `gate`                                                                                | Run aggregate gate checks and inspect gate reports                                                                    |
@@ -124,7 +115,7 @@ Known codes:
 
 ## Workspace Model
 
-`ghidra-agent-cli` uses this repository-local layout:
+`ghidra-agent-cli` uses this active workspace layout:
 
 ```text
 targets/<target-id>/

@@ -1,6 +1,6 @@
 ---
 name: "headless-ghidra-intake"
-description: "P0 sub-skill: confirm target identity, initialize the CLI workspace, verify Ghidra availability, and define analysis scope."
+description: "P0 phase skill for Headless Ghidra intake. Use when a target binary/archive needs identity confirmation, workspace initialization, Ghidra discovery, binary inspection, or analysis scope setup before any Ghidra analysis runs."
 phase: "P0"
 ---
 
@@ -21,7 +21,7 @@ workspace target and recording the initial analysis scope.
 - `ghidra-agent-cli scope remove-entry`
 - `ghidra-agent-cli gate check --phase P0`
 
-Archive normalization and any repository-specific bootstrap scripts may still
+Archive normalization and any target-specific bootstrap scripts may still
 run as backend details until the CLI exposes them directly.
 
 ## Inputs

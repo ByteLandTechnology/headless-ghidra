@@ -18,7 +18,7 @@ work is stable, and how the same contract drives post-generation review.
 ## Example Context
 
 - Target context already normalized during intake
-- Evidence must come from tracked exports and replayable command surfaces
+- Evidence must come from reviewed exports and replayable command surfaces
 - Reviewers need Markdown-visible proof that replay expectations survived
   planning
 
@@ -34,8 +34,8 @@ preserves evidence extraction and replay expectations.
 
 Evidence sources:
 
-- tracked command manifest
-- tracked export directory
+- replay command manifest
+- reviewed export directory
 
 Replay surface:
 
@@ -52,8 +52,8 @@ Non-negotiable constraints:
 
 Local rule overlay:
 
-- repository may require a named artifact manifest section
-- repository may not replace replay steps with informal analyst memory
+- project may require a named artifact manifest section
+- project may not replace replay steps with informal analyst memory
 ```
 
 ## Expected Observations
@@ -72,10 +72,10 @@ Local rule overlay:
 
 ## Local Rule Interpretation
 
-- Valid additive overlay: a repository requires one extra Markdown table that
+- Valid additive overlay: a project requires one extra Markdown table that
   lists manifest locations.
-- Invalid weakening attempt: a repository allows replay instructions to stay
-  undocumented as long as one maintainer remembers them.
+- Invalid weakening attempt: a project allows replay instructions to stay
+  undocumented as long as one operator remembers them.
 
 ## Next Step Routing
 
@@ -90,4 +90,4 @@ Local rule overlay:
 - Intake predecessor:
   [`../../headless-ghidra-intake/SKILL.md`](../../headless-ghidra-intake/SKILL.md)
 - Script authoring/review next step:
-  [`../../headless-ghidra-script-review/SKILL.md`](../../headless-ghidra-script-review/SKILL.md)
+  [`../../headless-ghidra/examples/ghidra-script-review-checklist.md`](../../headless-ghidra/examples/ghidra-script-review-checklist.md)

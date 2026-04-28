@@ -11,7 +11,7 @@
     decompilation against a local Ghidra 12.0.4 install
 - Pending local verification:
   - any concrete rename, prototype recovery, or type recovery decision for this
-    specific tracked sample target
+    specific example target
 
 ## Mutation Schema
 
@@ -30,7 +30,7 @@
   generic apply/verify rename scripts.
 - The current supported Java schema accepts `Item Kind = function`,
   `Item Kind = symbol`, and `Item Kind = label`.
-- `Prior Evidence` must cite tracked artifacts, not intuition alone.
+- `Prior Evidence` must cite reviewed artifacts, not intuition alone.
 - `Linked Selection` must identify the target-selection record that made this
   mutation the next allowed step.
 - If confidence is too low to keep the change stable across reruns, keep the
@@ -44,5 +44,5 @@ Ghidra 12.0.4 headless project. `label` remains a documented alias on the same
 symbol-target runtime surface and should be called out explicitly if a later
 replay validates it as a separate executable sample row.
 
-Treat this tracked sample file as reference material only. Live rename replay
+Treat this example file as reference material only. Live rename replay
 should use a workspace copy under `.work/ghidra-artifacts/<target-id>/`.

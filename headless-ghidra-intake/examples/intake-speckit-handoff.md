@@ -4,7 +4,7 @@
 
 Use this example when the team still needs to normalize the target, define
 project initialization expectations, and make the first `speckit` handoff
-portable across repositories.
+portable across workspaces.
 
 ## Purpose
 
@@ -34,7 +34,7 @@ reverse-engineering workflow.
 
 Target identity:
 
-- sample-target.bin from the tracked intake bundle
+- sample-target.bin from the reviewed intake bundle
 
 Workflow scope:
 
@@ -52,15 +52,15 @@ Non-negotiable constraints:
 
 Local rule overlay:
 
-- repository may require an extra intake summary section
-- repository may not replace the intake contract with GUI notes or informal
+- local project rules may require an extra intake summary section
+- local project rules may not replace the intake contract with GUI notes or informal
   setup steps
 ```
 
 ## Expected Observations
 
 - The generated planning artifacts keep the intake constraints explicit.
-- The artifacts remain portable across repositories.
+- The artifacts remain portable across workspaces.
 - A reviewer can understand the target and scope in one pass.
 
 ## Audit Walkthrough
@@ -73,9 +73,9 @@ Local rule overlay:
 
 ## Local Rule Interpretation
 
-- Valid additive overlay: a repository requires one more Markdown checklist
+- Valid additive overlay: a local project requires one more Markdown checklist
   item describing analyst ownership.
-- Invalid weakening attempt: a repository says target setup can be captured as
+- Invalid weakening attempt: a local project says target setup can be captured as
   informal GUI notes after planning.
 
 ## Next Step Routing

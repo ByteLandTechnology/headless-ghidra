@@ -3,7 +3,7 @@
 ## Status
 
 Machine-specific install, cache, and binary paths below are preserved only as
-maintainer-local observations. Revalidation commands should use the portable
+local validation observations. Revalidation commands should use the portable
 placeholders shown in each command block.
 
 - Artifact state: Validation gate record with local Ghidra replay verification
@@ -13,7 +13,7 @@ placeholders shown in each command block.
     evidence review, target selection, source-comparison preparation, rename
     application and verification, signature application and verification,
     review-artifact lint, selected decompilation, and stepwise compare records
-  - archive normalization now has a named wrapper entrypoint plus tracked
+  - archive normalization now has a named wrapper entrypoint plus reviewable
     intake, inventory, handoff, and replay surfaces
   - the active supported runtime surface is the Java script family
     `ExportAnalysisArtifacts.java`, `ReviewEvidenceCandidates.java`,
@@ -28,7 +28,7 @@ placeholders shown in each command block.
   - incremental executable interposition and library-harness fallback now have
     named documentation surfaces, but remain pending local replay
 - Validated locally on 2026-03-29:
-  - install discovery resolved a maintainer-local `analyzeHeadless` path under
+  - install discovery resolved a local validation `analyzeHeadless` path under
     the validated install root
   - the Java-only workflow completed `baseline`, `review-evidence`,
     `target-selection`, `apply-renames`, `verify-renames`,
@@ -40,7 +40,7 @@ placeholders shown in each command block.
   - runtime logs and redirected Ghidra user-home state stayed under `.work/`
   - actions for the same target were replayed sequentially because concurrent
     runs can fail with a Ghidra project lock
-  - no repository-supported generic wrapper exists yet for incremental compare
+  - no supported generic wrapper exists yet for incremental compare
 - Validated locally on 2026-03-30 for archive normalization:
   - `normalize-ar-archive.sh --help` exposed archive, artifact-root, member,
     review, and selection-policy inputs
@@ -56,7 +56,7 @@ placeholders shown in each command block.
     still produced reviewable failure Markdown under
     `.work/ghidra-artifacts/fake/`
 - Validated locally on 2026-03-31 for outside-in selection replay:
-  - `discover-ghidra.sh --print-install-dir` resolved a maintainer-local
+  - `discover-ghidra.sh --print-install-dir` resolved a local validation
     Ghidra 12.0.4 install root
   - `discover-ghidra.sh --show-help` succeeded against the resolved install
   - the local shell toolchain exposed `java 17.0.18` and `javac 17.0.18`
@@ -78,15 +78,15 @@ placeholders shown in each command block.
   - one parallel `target-selection` attempt failed only because Ghidra locked
     the shared project; rerunning sequentially passed without feature changes
   - Ghidra emitted non-fatal cache-maintenance and packed-db cache permission
-    warnings under a maintainer-local `/var/tmp` cache directory, but the
+    warnings under a local validation `/var/tmp` cache directory, but the
     supported actions still completed successfully
 
-## Current Repository-Supported Version
+## Current Locally Validated Version
 
 `12.0.4`
 
-Replace this field only after a maintainer validates the replay path on the
-newest repository-supported local Ghidra installation.
+Replace this field only after an operator validates the replay path on the
+newest supported local Ghidra installation.
 
 ## Validation Status By Behavior
 
@@ -105,8 +105,8 @@ newest repository-supported local Ghidra installation.
 | Target selection export                        | Validated                  | `target-selection.md` was emitted under `.work/ghidra-artifacts/ls-five-scripts-20260329b/`, and the updated outside-in replay also emitted runtime surfaces under `.work/ghidra-artifacts/sample-target--archive-main-o/` and `.work/ghidra-artifacts/sample-target-replay/`. Successful headless execution of `PlanTargetSelection.java` now serves as compile and execution validation for this surface.         |
 | Source-comparison preparation                  | Docs and syntax validated  | Runtime comparison still depends on a real upstream source checkout.                                                                                                                                                                                                                                                                                                                                                |
 | Source-comparison fallback path contract       | Validated                  | `plan-compare` and `compare-prep` both emitted `third_party/upstream/project-slug` and `.work/upstream-sources/project-slug`.                                                                                                                                                                                                                                                                                       |
-| Source-comparison deferred path                | Validated                  | The tracked sample now documents how a `deferred` upstream-reference record keeps formal diffing closed until a reviewable source reference exists.                                                                                                                                                                                                                                                                 |
-| Source-comparison real-reference happy path    | Validated                  | Ghidra baseline export succeeded for `zlib-minigzip-20260329`, and the tracked subset under `third_party/upstream/zlib/` now supports concrete inherited and unresolved findings.                                                                                                                                                                                                                                   |
+| Source-comparison deferred path                | Validated                  | The example now documents how a `deferred` upstream-reference record keeps formal diffing closed until a reviewable source reference exists.                                                                                                                                                                                                                                                                        |
+| Source-comparison real-reference happy path    | Validated                  | Ghidra baseline export succeeded for `zlib-minigzip-20260329`, and the reviewed subset under `third_party/upstream/zlib/` now supports concrete inherited and unresolved findings.                                                                                                                                                                                                                                  |
 | Source-comparison stale revalidation path      | Review contract documented | The walkthrough and validation notes now require source-derived claims to move back to blocked until re-review completes.                                                                                                                                                                                                                                                                                           |
 | Rename application                             | Validated                  | `rename-apply-report.md` recorded `Applied: 2`, `Failed: 0` for one `function` row and one `symbol` row.                                                                                                                                                                                                                                                                                                            |
 | Rename verification                            | Validated                  | `rename-verification-report.md` recorded `Verified: 2`, `Failed: 0` for one `function` row and one `symbol` row.                                                                                                                                                                                                                                                                                                    |
@@ -144,8 +144,8 @@ Observed result:
 - local shell Java toolchain resolved `java 17.0.18` and `javac 17.0.18`
 - `bash -n "$SKILL_ROOT/scripts/run-headless-analysis.sh"`
   passed
-- install discovery resolved a maintainer-local Ghidra 12.0.4 install root
-- install discovery resolved a maintainer-local `analyzeHeadless` path under
+- install discovery resolved a local validation Ghidra 12.0.4 install root
+- install discovery resolved a local validation `analyzeHeadless` path under
   that install root
 - `discover-ghidra.sh --show-help` succeeded for the resolved install
 - candidate sample binary exists at
@@ -156,7 +156,7 @@ Observed result:
 - extended Stage 2/3/5 replay completed against target id
   `ls-five-scripts-20260329b`
 - source-comparison happy-path replay succeeded for target id
-  `zlib-minigzip-20260329` against tracked reference
+  `zlib-minigzip-20260329` against review reference
   `third_party/upstream/zlib/`
 - archive-normalization happy path succeeded for archive id `sample-target`
   and accepted downstream target `sample-target--archive-main-o`
@@ -176,7 +176,7 @@ Observed result:
 - concurrent same-target replay can fail with a Ghidra project lock, so local
   replay should stay sequential per target
 - non-fatal cache-maintenance and packed-db cache permission warnings were
-  emitted under a maintainer-local `/var/tmp` cache directory, but the
+  emitted under a local validation `/var/tmp` cache directory, but the
   supported actions still passed
 
 ## Required Revalidation Commands
@@ -346,8 +346,8 @@ cp "$SKILL_ROOT/examples/artifacts/sample-target/comparison-command-log.md" \
   "$ARTIFACT_ROOT/comparison-command-log.md"
 
 # Record the exact target-specific compare commands in
-# "$ARTIFACT_ROOT/comparison-command-log.md". The repository does not yet ship a
-# generic compare wrapper, so the lines below are placeholders for the reviewed
+# "$ARTIFACT_ROOT/comparison-command-log.md". This workflow does not yet provide
+# a generic compare wrapper, so the lines below are placeholders for the reviewed
 # per-target commands.
 
 <build-hybrid-replacement-command>
@@ -357,7 +357,7 @@ cp "$SKILL_ROOT/examples/artifacts/sample-target/comparison-command-log.md" \
 ```
 
 Set `SKILL_ROOT` to the installed skill package location for your environment,
-such as `.agents/skills/headless-ghidra`,
+such as `<installed-skill-root>`,
 `.claude/skills/headless-ghidra`, or an absolute global install
 path.
 
@@ -367,13 +367,13 @@ Observed result:
 - baseline artifacts refresh without decompiled bodies
 - `plan-call-graph` resolves the registered runner command path
 - `call-graph` exports `call-graph-detail.md`
-- `plan-compare` emits the expected tracked and fallback paths for a reviewable
+- `plan-compare` emits the expected review and fallback paths for a reviewable
   source-comparison intake
 - `compare-prep` emits the same paths, creates the local fallback workspace,
   and reminds the reviewer to update `upstream-reference.md` and
   `third-party-diff.md`
 - `baseline` against `zlib-minigzip-20260329` emits function, string, and
-  import evidence that matches the tracked `zlib` review subset
+  import evidence that matches the reviewed `zlib` reference subset
 - evidence review emits `evidence-candidates.md`
 - target selection emits `target-selection.md`
 - rename application writes a reviewable apply report under
@@ -409,10 +409,10 @@ Current schema:
 | Field                                                         | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Validated Ghidra version                                      | `12.0.4`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Install path                                                  | `<maintainer-local-ghidra-install-dir>`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Resolved analyzeHeadless path                                 | `<maintainer-local-ghidra-install-dir>/support/analyzeHeadless`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Install path                                                  | `<local validation-ghidra-install-dir>`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Resolved analyzeHeadless path                                 | `<local validation-ghidra-install-dir>/support/analyzeHeadless`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Validation date                                               | `2026-03-31`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Validated by                                                  | `Codex local maintainer replay`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Validated by                                                  | `local validation replay`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Baseline evidence-only behavior observed                      | `pass; emitted function/types/imports/strings/xrefs plus blocked decompiled-output placeholder`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Rename application behavior observed                          | `pass; applied one executable function row and one executable symbol row with Failed: 0`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Rename verification behavior observed                         | `pass; verified one executable function row and one executable symbol row with Failed: 0`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -425,6 +425,6 @@ Current schema:
 | Incremental compare behavior observed                         | `docs-only; comparison-command-log.md now defines the required original-versus-hybrid record, but no concrete compare case was replayed yet`                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Source-comparison fallback-path behavior observed             | `pass; plan-compare and compare-prep emitted third_party/upstream/project-slug and .work/upstream-sources/project-slug with explicit follow-up notes`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Source-comparison deferred-path behavior observed             | `pass; the sample guidance now defines a deferred upstream-reference state that keeps formal diffing closed until a reviewable source reference exists`                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Source-comparison real-reference happy-path behavior observed | `pass; Ghidra baseline against a maintainer-local minigzip build now aligns with tracked zlib review files under third_party/upstream/zlib/`                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Source-comparison real-reference happy-path behavior observed | `pass; Ghidra baseline against a local validation minigzip build now aligns with reviewed zlib reference files under third_party/upstream/zlib/`                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Source-comparison stale-path behavior observed                | `docs-only; the walkthrough and validation notes now require source-derived claims to move back to blocked until re-review finishes`                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Notes on version-specific behavior                            | `wrapper redirects Ghidra user.home into .work/ghidra-user-home, records per-action run/script logs under .work/ghidra-artifacts/<target-id>/logs/, treats malformed rename logs or signature logs as non-zero even when Ghidra itself continues after the script error, replays for the same target should stay sequential because concurrent runs can hit a Ghidra project lock, and Ghidra 12.0.4 on the validating host emitted non-fatal cache-maintenance and packed-db cache permission warnings under a maintainer-local /var/tmp cache directory while the supported actions still passed` |
+| Notes on version-specific behavior                            | `wrapper redirects Ghidra user.home into .work/ghidra-user-home, records per-action run/script logs under .work/ghidra-artifacts/<target-id>/logs/, treats malformed rename logs or signature logs as non-zero even when Ghidra itself continues after the script error, replays for the same target should stay sequential because concurrent runs can hit a Ghidra project lock, and Ghidra 12.0.4 on the validating host emitted non-fatal cache-maintenance and packed-db cache permission warnings under a local validation /var/tmp cache directory while the supported actions still passed` |
