@@ -33,7 +33,7 @@ The helper is installed with the skill family and must remain a sibling of
 ask the user to reinstall or refresh the whole skill family rather than
 installing a separate CLI package inside the target workspace.
 
-Release-managed helper package version: `ghidra-agent-cli@1.6.4`. This marker
+Release-managed helper package version: `ghidra-agent-cli@1.6.5`. This marker
 is packaging metadata; do not ask users to install it manually during an
 analysis workflow.
 

@@ -1,3 +1,5 @@
+## [1.6.5](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.6.4...v1.6.5) (2026-04-28)
+
 ## [1.6.4](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.6.3...v1.6.4) (2026-04-27)
 
 ### Bug Fixes
