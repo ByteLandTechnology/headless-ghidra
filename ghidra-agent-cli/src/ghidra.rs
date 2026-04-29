@@ -22,56 +22,72 @@ const BUNDLED_SCRIPT_NAMES: &[&str] = &[
     "VerifyRenames.java",
 ];
 
-/// Search common Ghidra installation locations
-fn search_ghidra_locations() -> Option<PathBuf> {
-    let search_paths = [
-        // macOS Applications
-        PathBuf::from("/Applications"),
-        // Home directory
-        PathBuf::from(std::env::var("HOME").ok()?).join("ghidra"),
-        // Homebrew on Apple Silicon (Cellar structure)
-        PathBuf::from("/opt/homebrew/Cellar/ghidra"),
-        // Homebrew prefix (opt symlink)
-        PathBuf::from("/opt/homebrew/opt/ghidra"),
-        // Homebrew on Intel
-        PathBuf::from("/usr/local/Cellar/ghidra"),
-        // /opt
-        PathBuf::from("/opt/ghidra"),
-        // /usr/local
-        PathBuf::from("/usr/local/ghidra"),
-        // Current directory (for dev)
-        std::env::current_dir().ok()?,
-    ];
-
-    for base in &search_paths {
-        // Check if this is a Ghidra root directly
-        if base.join("support").join("analyzeHeadless").exists() {
-            return Some(base.clone());
-        }
-        // Check if this is a versioned directory (e.g., /opt/homebrew/Cellar/ghidra/12.0.4)
-        if let Ok(entries) = std::fs::read_dir(base) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                // Check libexec (Homebrew Ghidra structure)
-                // Entry is /opt/homebrew/Cellar/ghidra/12.0.4/libexec, so check path/support/analyzeHeadless directly
-                let name = path.file_name().unwrap_or_default().to_string_lossy();
-                if name == "libexec" && path.join("support").join("analyzeHeadless").exists() {
-                    return Some(path);
+/// Search for ghidraRun in PATH and resolve to Ghidra installation directory.
+fn find_ghidra_via_path() -> Option<PathBuf> {
+    // Try both ghidraRun (alternative launcher) and analyzeHeadless
+    for cmd_name in ["ghidraRun", "analyzeHeadless"] {
+        if let Ok(path) = std::process::Command::new("which").arg(cmd_name).output() {
+            let output = String::from_utf8_lossy(&path.stdout);
+            let path_str = output.trim();
+            if !path_str.is_empty() {
+                let bin_path = PathBuf::from(path_str);
+                // ghidraRun is typically in the Ghidra root directory
+                // analyzeHeadless is in the support directory
+                let ghidra_dir = if bin_path.file_name().unwrap_or_default() == "ghidraRun" {
+                    bin_path.parent()?.parent()?
+                } else {
+                    // analyzeHeadless is in support/, so go up two levels from support
+                    bin_path.parent()?.parent()?
+                };
+                // Verify this is a valid Ghidra installation
+                if ghidra_dir.join("support").join("analyzeHeadless").exists() {
+                    return Some(ghidra_dir.to_path_buf());
                 }
-                // Check for ghidra-*/support structure
-                if path.is_dir() {
-                    let name = path.file_name().unwrap_or_default().to_string_lossy();
-                    let name_lower = name.to_lowercase();
-                    if (name_lower.starts_with("ghidra")
-                        || name
-                            .chars()
-                            .next()
-                            .map(|c| c.is_ascii_digit())
-                            .unwrap_or(false))
-                        && path.join("support").join("analyzeHeadless").exists()
+                // Try canonical path for symlinked installations
+                if let Ok(canonical) = bin_path.canonicalize() {
+                    let canonical_ghidra_dir = canonical.parent()?.parent()?.to_path_buf();
+                    if canonical_ghidra_dir
+                        .join("support")
+                        .join("analyzeHeadless")
+                        .exists()
                     {
-                        return Some(path);
+                        return Some(canonical_ghidra_dir);
                     }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Find Ghidra installation via `brew info ghidra --json` which returns the actual
+/// installation path regardless of symlinks or cellar structure.
+fn find_ghidra_via_brew_info() -> Option<PathBuf> {
+    let output = std::process::Command::new("brew")
+        .args(["info", "ghidra", "--json"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let json_str = String::from_utf8_lossy(&output.stdout);
+    // Parse the JSON to find the installed ghidra path
+    // The JSON format is: { "ghidra": [ { "installed": true, "libexec": "/path/to/ghidra/12.0.4" }, ... ] }
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&json_str)
+        && let Some(packages) = json.get("ghidra").and_then(|p| p.as_array())
+    {
+        for pkg in packages {
+            if pkg
+                .get("installed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+                && let Some(libexec) = pkg.get("libexec").and_then(|v| v.as_str())
+            {
+                let path = PathBuf::from(libexec);
+                if path.join("support").join("analyzeHeadless").exists() {
+                    return Some(path);
                 }
             }
         }
@@ -97,13 +113,18 @@ pub fn discover_ghidra(install_dir: Option<&Path>) -> Result<PathBuf> {
         }
     }
 
-    // 3. Auto-search common locations
-    if let Some(path) = search_ghidra_locations() {
+    // 3. Query Homebrew for the installed Ghidra path (most reliable on macOS/Linux with brew)
+    if let Some(path) = find_ghidra_via_brew_info() {
+        return Ok(path);
+    }
+
+    // 4. Search PATH for ghidraRun or analyzeHeadless
+    if let Some(path) = find_ghidra_via_path() {
         return Ok(path);
     }
 
     Err(anyhow!(
-        "Ghidra not found. Set GHIDRA_INSTALL_DIR, use --install-dir, or install Ghidra in /Applications, ~/ghidra, or Homebrew locations"
+        "Ghidra not found. Set GHIDRA_INSTALL_DIR, use --install-dir, install via brew, or ensure ghidraRun/analyzeHeadless is in PATH"
     ))
 }
 
