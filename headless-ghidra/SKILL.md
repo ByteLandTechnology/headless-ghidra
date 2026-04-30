@@ -127,3 +127,11 @@ record and relies on the phase-owned YAML artifacts above for hand-offs.
 - P2 complete → `headless-ghidra-discovery`
 - P3 complete → `headless-ghidra-batch-decompile`
 - P4 complete for all selected functions → either loop back to P3 or finish
+
+## Independent Skills
+
+The following skills operate outside the P0–P4 pipeline and can be invoked directly:
+
+| Skill | Purpose | Invocation |
+| ----- | ------ | --------- |
+| [`headless-ghidra-analyze-function`](../headless-ghidra-analyze-function/SKILL.md) | Thorough single-function analysis following the strict five-step recovery order: types → constants → vtables → function identity → decompilation. Use when you need complete analysis of one specific function with full type/constant/vtable context before decompilation results are interpreted. | Invoked when user asks to "analyze this function thoroughly", "decompile function at 0x... with full context", or requests complete per-function analysis. |

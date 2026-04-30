@@ -15,8 +15,8 @@ Recommended in Codex:
 $skill-installer install all skills from https://github.com/ByteLandTechnology/headless-ghidra
 ```
 
-This should install 7 sibling skills: `headless-ghidra`, the 5 P0-P4 phase
-skills, and the bundled helper skill `ghidra-agent-cli`. Restart Codex after
+This should install 8 sibling skills: `headless-ghidra`, the 5 P0-P4 phase
+skills, the single-function analysis skill, and the bundled helper skill `ghidra-agent-cli`. Restart Codex after
 installation.
 
 Use the `skills` CLI to install every skill in this skill family to every
@@ -86,3 +86,11 @@ Runtime output belongs in the active workspace under `targets/<target-id>/` and
 | P2    | [Evidence](./headless-ghidra-evidence/README.md)               | Identify third-party code and evidence sources.                             |
 | P3    | [Discovery](./headless-ghidra-discovery/README.md)             | Enrich names, signatures, types, constants, and strings.                    |
 | P4    | [Batch Decompile](./headless-ghidra-batch-decompile/README.md) | Apply metadata and decompile selected functions.                            |
+
+## Single Function Analysis
+
+| Skill | README | Purpose |
+|-------|--------|---------|
+| —     | [Analyze Function](./headless-ghidra-analyze-function/README.md) | Thorough analysis of one function following strict recovery order: types → constants → vtables → function identity → decompilation. |
+
+**Invokable when you want deep, self-contained analysis of a single function** with full type/constant/vtable context before the decompilation result is interpreted.

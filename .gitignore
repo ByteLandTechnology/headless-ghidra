@@ -21,3 +21,5 @@ ghidra-agent-cli/target/
 ghidra-agent-cli/dist/
 ghidra-agent-cli/tmp/
 ghidra-agent-cli/ghidra-script-bundle/
+headless-ghidra-analyze-function/analyze-function-workspace/
+headless-ghidra-analyze-function-workspace/
