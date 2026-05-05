@@ -1,3 +1,9 @@
+## [1.8.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.7.0...v1.8.0) (2026-05-05)
+
+### Features
+
+* add single-function Ghidra analysis skill ([4c2347f](https://github.com/ByteLandTechnology/headless-ghidra/commit/4c2347fb9f1108df7ce0736b69deacf34a9a150a))
+
 ## [1.7.0](https://github.com/ByteLandTechnology/headless-ghidra/compare/v1.6.5...v1.7.0) (2026-04-29)
 
 ### Features
